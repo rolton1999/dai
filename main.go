@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -43,25 +42,6 @@ func main() {
 	}
 }
 
-type stream struct {
-	bandwidth  int
-	frameRate  float64
-	codecs     []string
-	resolution string
-	link       string
-}
-
-func (s stream) String() string {
-	return fmt.Sprintf(
-		"{\n\tbandwidth: %d,\n \tframeRate: %f,\n \tcodecs: %v,\n \tresolution: %s,\n \tlink: %s,\n}",
-		s.bandwidth,
-		s.frameRate,
-		s.codecs,
-		s.resolution,
-		s.link,
-	)
-}
-
 func getStreams(m3u8Link string) ([]stream, error) {
 	const extM3UPrefix = "#EXTM3U"
 	resp, err := http.Get(m3u8Link)
@@ -84,70 +64,13 @@ func getStreams(m3u8Link string) ([]stream, error) {
 	var streams []stream
 
 	lines := bytes.Split(extM3UBytes, []byte{'\n'})
-	// lines := strings.Split(string(extM3U), "\n")
-	// fmt.Println("lines: ", lines)
 
 	for i := 0; i < len(lines); i += 2 {
-		// fmt.Println("line: ", string(lines[i]))
-		// fmt.Println("line: ", string(lines[i+1]))
-
-		var s stream
-
-		firstComma := bytes.Index(lines[i], []byte{','})
-		bytes := lines[i][firstComma+1:]
-
-		field := 0
-		for i := 0; i < len(bytes); {
-			eqI := i
-			for ; bytes[eqI] != '='; eqI++ {
-			}
-
-			commaI := eqI + 1
-			var toFind byte = ','
-			inc := 1
-			if commaI < len(bytes) && bytes[commaI] == '"' {
-				eqI += 1
-				commaI += 1
-				toFind = '"'
-				inc += 1
-			}
-
-			for ; commaI != len(bytes) && bytes[commaI] != toFind; commaI++ {
-			}
-
-			got := string(bytes[eqI+1 : commaI])
-
-			switch field {
-			case 0:
-				bandwidth, e := strconv.Atoi(got)
-				if e != nil {
-					return nil, fmt.Errorf("cannot parse bandwidth")
-				}
-				s.bandwidth = bandwidth
-			case 1:
-				frameRate, e := strconv.ParseFloat(got, 63)
-				if e != nil {
-					return nil, fmt.Errorf("cannot parse frameRate")
-				}
-				s.frameRate = frameRate
-			case 2:
-				codecs := strings.Split(got, ",")
-				for _, c := range codecs {
-					s.codecs = append(s.codecs, strings.TrimSpace(c))
-				}
-			case 3:
-				s.resolution = got
-			default:
-				panic("unknown stream field" + got + s.String())
-			}
-
-			i = commaI + inc
-			field += 1
+		stream, err := streamFromBytes(lines[i], lines[i+1])
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse stream: %w", err)
 		}
-
-		s.link = string(lines[i+1])
-
-		streams = append(streams, s)
+		streams = append(streams, stream)
 	}
 
 	return streams, nil
