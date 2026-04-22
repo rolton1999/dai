@@ -36,14 +36,27 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("streams: ")
-	for _, s := range streams {
-		fmt.Println(s)
+	// fmt.Println("streams: ")
+	// for _, s := range streams {
+	// 	fmt.Println(s)
+	// }
+	getOnStreamLink(streams[0].link)
+}
+
+func getOnStreamLink(link string) {
+	resp, err := http.Get(link)
+	if err != nil {
+		fmt.Println("cannot get stream link: ", err)
+		return
 	}
+
+	body, err := io.ReadAll(resp.Body)
+	fmt.Println("body: ", string(body))
 }
 
 func getStreams(m3u8Link string) ([]stream, error) {
 	const extM3UPrefix = "#EXTM3U"
+
 	resp, err := http.Get(m3u8Link)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get m3u8: %w", err)
