@@ -10,6 +10,9 @@ import (
 	"strings"
 )
 
+// how to load m3u8
+// https://gist.github.com/devinschumacher/aad315b92661fdaad316b949c33c94c7
+
 func main() {
 	if len(os.Args) == 0 {
 		fmt.Println("enter some url")
@@ -26,12 +29,12 @@ func main() {
 		panic(err)
 	}
 
-	m3u8Link, err := getM3U8Link(videoID)
+	masterLink, err := getM3U8Link(videoID)
 	if err != nil {
 		panic(err)
 	}
 
-	streams, err := getStreams(m3u8Link)
+	variantPlaylists, err := getVariantPlaylists(masterLink)
 	if err != nil {
 		panic(err)
 	}
@@ -40,21 +43,52 @@ func main() {
 	// for _, s := range streams {
 	// 	fmt.Println(s)
 	// }
-	getOnStreamLink(streams[0].link)
+	// fmt.Println("master link: ", m3u8Link)
+
+	// masterLink := strings.Split(m3u8Link, "?")[0]
+	// masterLink := "https://bl.rutube.ru/route"
+	// fmt.Println("split master link: ", strings.Split(m3u8Link, "/"))
+	//_ = streams
+	getOnVariantPlaylistLink(masterLink, variantPlaylists[0])
 }
 
-func getOnStreamLink(link string) {
-	resp, err := http.Get(link)
+func getOnVariantPlaylistLink(masterLink string, s variantPlaylist) {
+	// fmt.Println("stream: ", s)
+
+	resp, err := http.Get(s.link)
 	if err != nil {
-		fmt.Println("cannot get stream link: ", err)
+		fmt.Println("cannot get variantPlaylist link: ", err)
+		return
+	}
+	// fmt.Println("got: ", masterLink+"/"+s.resolution+"/")
+
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	sp := bytes.Split(body, []byte{'\n'})
+	// fmt.Println("sp9: :", string(sp[7]))
+
+	firstSegment := string(sp[7])
+
+	// link := masterLink + "/" + firstSegment
+	link := masterLink + "/" + s.resolution + "/" + firstSegment
+	fmt.Println("link: ", link)
+	resp, err = http.Get(masterLink + "/" + firstSegment)
+	if err != nil {
+		fmt.Println("cannot get first segment link: ", err)
 		return
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	fmt.Println("body: ", string(body))
+	file, err := os.Create("output.ts")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	io.Copy(file, resp.Body)
 }
 
-func getStreams(m3u8Link string) ([]stream, error) {
+func getVariantPlaylists(m3u8Link string) ([]variantPlaylist, error) {
 	const extM3UPrefix = "#EXTM3U"
 
 	resp, err := http.Get(m3u8Link)
@@ -74,19 +108,19 @@ func getStreams(m3u8Link string) ([]stream, error) {
 	extM3UBytes = extM3UBytes[len(extM3UPrefix):]
 	extM3UBytes = bytes.TrimSpace(extM3UBytes)
 
-	var streams []stream
+	var variantPlaylists []variantPlaylist
 
 	lines := bytes.Split(extM3UBytes, []byte{'\n'})
 
 	for i := 0; i < len(lines); i += 2 {
-		stream, err := streamFromBytes(lines[i], lines[i+1])
+		variantPlaylist, err := variantPlaylistFromBytes(lines[i], lines[i+1])
 		if err != nil {
-			return nil, fmt.Errorf("cannot parse stream: %w", err)
+			return nil, fmt.Errorf("cannot parse variantPlaylist: %w", err)
 		}
-		streams = append(streams, stream)
+		variantPlaylists = append(variantPlaylists, variantPlaylist)
 	}
 
-	return streams, nil
+	return variantPlaylists, nil
 }
 
 func getVideoID(url string) (string, error) {

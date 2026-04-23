@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-type stream struct {
+type variantPlaylist struct {
 	bandwidth  int
 	frameRate  float64
 	codecs     []string
@@ -15,7 +15,7 @@ type stream struct {
 	link       string
 }
 
-func (s stream) String() string {
+func (s variantPlaylist) String() string {
 	return fmt.Sprintf(
 		"{\n\tbandwidth: %d,\n \tframeRate: %f,\n \tcodecs: %v,\n \tresolution: %s,\n \tlink: %s,\n}",
 		s.bandwidth,
@@ -27,8 +27,8 @@ func (s stream) String() string {
 }
 
 // meta: #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=156000,FRAME-RATE=29.97,CODECS="avc1.4d400c, mp4a.40.2",RESOLUTION=256x144
-func streamFromBytes(meta []byte, link []byte) (stream, error) {
-	var s stream
+func variantPlaylistFromBytes(meta []byte, link []byte) (variantPlaylist, error) {
+	var s variantPlaylist
 	// skip #EXT-X-STREAM-INF:PROGRAM-ID=1
 	firstComma := bytes.Index(meta, []byte{','})
 	bytes := meta[firstComma+1:]
