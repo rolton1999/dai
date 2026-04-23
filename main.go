@@ -49,10 +49,10 @@ func main() {
 	// masterLink := "https://bl.rutube.ru/route"
 	// fmt.Println("split master link: ", strings.Split(m3u8Link, "/"))
 	//_ = streams
-	getOnVariantPlaylistLink(masterLink, variantPlaylists[0])
+	getOnVariantPlaylistLink(variantPlaylists[0])
 }
 
-func getOnVariantPlaylistLink(masterLink string, s variantPlaylist) {
+func getOnVariantPlaylistLink(s variantPlaylist) {
 	// fmt.Println("stream: ", s)
 
 	resp, err := http.Get(s.link)
@@ -60,29 +60,43 @@ func getOnVariantPlaylistLink(masterLink string, s variantPlaylist) {
 		fmt.Println("cannot get variantPlaylist link: ", err)
 		return
 	}
-	// fmt.Println("got: ", masterLink+"/"+s.resolution+"/")
+
+	first := strings.Split(s.link, "?")[0]
+	li := strings.LastIndex(first, "/")
+	prefixBeforeTs := first[:li]
 
 	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 
 	sp := bytes.Split(body, []byte{'\n'})
+	// for _, s := range sp[:20] {
+	// 	fmt.Println(string(s))
+	// }
 	// fmt.Println("sp9: :", string(sp[7]))
 
 	firstSegment := string(sp[7])
+	// firstSegment := strings.Split(string(sp[7]), "/")[1]
 
-	// link := masterLink + "/" + firstSegment
-	link := masterLink + "/" + s.resolution + "/" + firstSegment
+	fmt.Println("sp s.link: ", strings.Split(s.link, "?"))
+	// link := s.link + "/" + firstSegment
+	link := prefixBeforeTs + "/" + firstSegment
 	fmt.Println("link: ", link)
-	resp, err = http.Get(masterLink + "/" + firstSegment)
+	resp, err = http.Get(link)
 	if err != nil {
 		fmt.Println("cannot get first segment link: ", err)
 		return
 	}
+	// fmt.Println("resp: ", resp)
 
-	file, err := os.Create("output.ts")
+	// body, err = io.ReadAll(resp.Body)
+	// resp.Body.Close()
+	// fmt.Println("\n\n>>> body got: ", string(body)[:200])
+
+	file, err := os.Create("input.ts")
 	if err != nil {
 		panic(err)
 	}
+
 	defer file.Close()
 
 	io.Copy(file, resp.Body)
