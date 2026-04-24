@@ -35,15 +35,15 @@ func variantPlaylistFromBytes(meta []byte, link []byte) (variantPlaylist, error)
 
 	field := 0
 	for i := 0; i < len(bytes); {
-		eqI := i
-		for ; bytes[eqI] != '='; eqI++ {
+		equalSignIndex := i
+		for ; bytes[equalSignIndex] != '='; equalSignIndex++ {
 		}
 
-		commaI := eqI + 1
+		commaI := equalSignIndex + 1
 		var toFind byte = ','
 		inc := 1
 		if commaI < len(bytes) && bytes[commaI] == '"' {
-			eqI += 1
+			equalSignIndex += 1
 			commaI += 1
 			toFind = '"'
 			inc += 1
@@ -52,7 +52,7 @@ func variantPlaylistFromBytes(meta []byte, link []byte) (variantPlaylist, error)
 		for ; commaI != len(bytes) && bytes[commaI] != toFind; commaI++ {
 		}
 
-		got := string(bytes[eqI+1 : commaI])
+		got := string(bytes[equalSignIndex+1 : commaI])
 
 		switch field {
 		case 0:
