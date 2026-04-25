@@ -15,8 +15,7 @@ import (
 
 func main() {
 	if len(os.Args) == 0 {
-		fmt.Println("enter some url")
-		os.Exit(1)
+		panic("enter some url")
 	}
 
 	url := os.Args[1]
@@ -39,16 +38,6 @@ func main() {
 		panic(err)
 	}
 
-	// fmt.Println("streams: ")
-	// for _, s := range streams {
-	// 	fmt.Println(s)
-	// }
-	// fmt.Println("master link: ", m3u8Link)
-
-	// masterLink := strings.Split(m3u8Link, "?")[0]
-	// masterLink := "https://bl.rutube.ru/route"
-	// fmt.Println("split master link: ", strings.Split(m3u8Link, "/"))
-	//_ = streams
 	downloadTSFiles(variantPlaylists[0])
 }
 
@@ -75,12 +64,6 @@ func downloadTSFiles(s variantPlaylist) {
 		fmt.Println("cannot get first segment link: ", err)
 		return
 	}
-
-	// fmt.Println("resp: ", resp)
-
-	// body, err = io.ReadAll(resp.Body)
-	// resp.Body.Close()
-	// fmt.Println("\n\n>>> body got: ", string(body)[:200])
 
 	file, err := os.Create("inputt.ts")
 	if err != nil {

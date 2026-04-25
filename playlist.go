@@ -7,11 +7,15 @@ import (
 	"strings"
 )
 
+type resolution struct {
+	w, h int
+}
+
 type variantPlaylist struct {
 	bandwidth  int
 	frameRate  float64
 	codecs     []string
-	resolution string
+	resolution resolution
 	link       string
 }
 
@@ -42,6 +46,7 @@ func variantPlaylistFromBytes(meta []byte, link []byte) (variantPlaylist, error)
 		commaI := equalSignIndex + 1
 		var toFind byte = ','
 		inc := 1
+		// if we have quoted "codec1, codec2" instead of direct unquoted value
 		if commaI < len(bytes) && bytes[commaI] == '"' {
 			equalSignIndex += 1
 			commaI += 1
@@ -73,7 +78,13 @@ func variantPlaylistFromBytes(meta []byte, link []byte) (variantPlaylist, error)
 				s.codecs = append(s.codecs, strings.TrimSpace(c))
 			}
 		case 3:
-			s.resolution = got
+			split := strings.Split(got, "x")
+			if len(split) != 2 {
+				return s, fmt.Errorf("cannot parse resolution")
+			}
+			x, _ := strconv.Atoi(split[0])
+			y, _ := strconv.Atoi(split[1])
+			s.resolution = resolution{x, y}
 		default:
 			panic("unknown stream field" + got + s.String())
 		}
