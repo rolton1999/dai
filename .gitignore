@@ -1,3 +1,4 @@
 dai
 *.ts
 *.mp4
+./tmp

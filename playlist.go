@@ -3,12 +3,25 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
 
 type resolution struct {
 	w, h int
+}
+
+func (r resolution) Less(other resolution) bool {
+	if r.w == other.w {
+		return r.h < other.h
+	}
+	return r.w < other.w
+}
+
+func (r resolution) String() string {
+	const template = "%dx%d"
+	return fmt.Sprintf(template, r.w, r.h)
 }
 
 type variantPlaylist struct {
@@ -96,6 +109,20 @@ func variantPlaylistFromBytes(meta []byte, link []byte) (variantPlaylist, error)
 	s.link = string(link)
 
 	return s, nil
+}
+
+func sortByResulutionDesc(d []variantPlaylist) []variantPlaylist {
+	sort.Slice(d, func(i, j int) bool {
+		return !d[i].resolution.Less(d[j].resolution)
+	})
+	return d
+}
+
+func sortByResulutionInc(d []variantPlaylist) []variantPlaylist {
+	sort.Slice(d, func(i, j int) bool {
+		return d[i].resolution.Less(d[j].resolution)
+	})
+	return d
 }
 
 func (s *variantPlaylist) getPlayListLinkPrefix() string {

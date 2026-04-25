@@ -2,11 +2,11 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -28,51 +28,90 @@ func main() {
 		panic(err)
 	}
 
-	masterLink, err := getM3U8Link(videoID)
+	videoInfo, err := getVideoInfo(videoID)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("got videoInfo: ", videoInfo)
+
+	variantPlaylists, err := getVariantPlaylists(videoInfo.masterPlaylistLink)
 	if err != nil {
 		panic(err)
 	}
 
-	variantPlaylists, err := getVariantPlaylists(masterLink)
+	variantPlaylists = sortByResulutionDesc(variantPlaylists)
+
+	err = downloadTSFiles("tmp", videoInfo.title, variantPlaylists[0])
 	if err != nil {
 		panic(err)
 	}
 
-	downloadTSFiles(variantPlaylists[0])
+	fmt.Println("done")
 }
 
-func downloadTSFiles(s variantPlaylist) {
-	resp, err := http.Get(s.link)
+func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist) error {
+	resp, err := http.Get(playlist.link)
 	if err != nil {
-		fmt.Println("cannot get variantPlaylist link: ", err)
-		return
+		return fmt.Errorf("cannot get variantPlaylist link: %w", err)
 	}
+
+	const readWriteMode = 0777
+	err = os.Mkdir(dirName, readWriteMode)
+	if err != nil {
+		return fmt.Errorf("cannot create temp dir: %w", err)
+	}
+
+	// #EXTM3U
+	// #EXT-X-TARGETDURATION:7
+	// #EXT-X-ALLOW-CACHE:YES
+	// #EXT-X-PLAYLIST-TYPE:VOD
+	// #EXT-X-VERSION:3
+	// #EXT-X-MEDIA-SEQUENCE:1
+	// #EXTINF:3.937,
+	// e742a021efe5453586f12d4d08a836fe.mp4/segment-1-v1-a1.ts <- 7th line
+	// #EXTINF:0.133,
+	// e742a021efe5453586f12d4d08a836fe.mp4/segment-2-v1-a1.ts
+	// #EXTINF:6.607,
+	// e742a021efe5453586f12d4d08a836fe.mp4/segment-3-v1-a1.ts
+	// #EXTINF:5.339,
+	// ....
+	// e742a021efe5453586f12d4d08a836fe.mp4/segment-1157-v1-a1.ts
+	// #EXT-X-ENDLIST
 
 	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 
-	prefix := s.getPlayListLinkPrefix()
+	prefix := playlist.getPlayListLinkPrefix()
 
-	sp := bytes.Split(body, []byte{'\n'})
+	split := bytes.Split(body, []byte{'\n'})
 
-	firstSegment := string(sp[7])
+	namePrefix = strings.ReplaceAll(namePrefix, " ", "_")
+	namePrefix = strings.ReplaceAll(namePrefix, "/", "")
 
-	link := prefix + "/" + firstSegment
-	fmt.Println("link: ", link)
-	resp, err = http.Get(link)
-	if err != nil {
-		fmt.Println("cannot get first segment link: ", err)
-		return
+	howMany := (len(split) - 7) / 2
+	fmt.Printf("Gonna load %d fragments\n", howMany)
+	for segmentIndex, i := 0, 7; i < len(split); segmentIndex, i = segmentIndex+1, i+2 {
+		segment := string(split[i])
+		link := prefix + "/" + segment
+		resp, err = http.Get(link)
+		if err != nil {
+			return fmt.Errorf("cannot get first segment link: %w", err)
+		}
+
+		fileName := dirName + "/" + namePrefix + "_" + strconv.Itoa(segmentIndex) + ".ts"
+		file, err := os.Create(fileName)
+		if err != nil {
+			panic(err)
+		}
+
+		io.Copy(file, resp.Body)
+		file.Close()
+
+		fmt.Printf("\rLoaded: %d%%", 100*(segmentIndex+1)/howMany)
 	}
+	fmt.Println()
 
-	file, err := os.Create("inputt.ts")
-	if err != nil {
-		panic(err)
-	}
-
-	defer file.Close()
-
-	io.Copy(file, resp.Body)
+	return nil
 }
 
 func getVariantPlaylists(m3u8Link string) ([]variantPlaylist, error) {
@@ -119,41 +158,4 @@ func getVideoID(url string) (string, error) {
 	}
 
 	return url[i+1:], nil
-}
-
-func getM3U8Link(videoID string) (string, error) {
-	const template = "https://rutube.ru/api/play/options/%s/?format=json"
-
-	url := fmt.Sprintf(template, videoID)
-
-	resp, err := http.Get(url)
-	if err != nil {
-		return "", fmt.Errorf("cannot get play/options: %w", err)
-	}
-
-	return getM3U8FromResponse(resp)
-}
-
-func getM3U8FromResponse(resp *http.Response) (string, error) {
-	type videoBalancer struct {
-		M3U8 string `json:"m3u8"`
-	}
-
-	type expectedBody struct {
-		VideoBalancer videoBalancer `json:"video_balancer"`
-	}
-
-	var eBody expectedBody
-
-	readBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("cannot read body: %w", err)
-	}
-
-	err = json.Unmarshal(readBody, &eBody)
-	if err != nil {
-		return "", fmt.Errorf("cannot unmarshal body: %w", err)
-	}
-
-	return eBody.VideoBalancer.M3U8, nil
 }
