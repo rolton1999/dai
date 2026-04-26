@@ -12,16 +12,16 @@ import (
 	"time"
 )
 
-func downloadSingleVideo(videoID string) {
+func downloadSingleVideo(videoID string) error {
 	stopGettingInfoMessage := spinningMessage("Getting info", "Got video info successfully")
 	videoInfo, err := getVideoInfo(videoID)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("cannot get videoInfo: %w", err)
 	}
 
 	variantPlaylists, err := getVariantPlaylists(videoInfo.masterPlaylistLink)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("cannot get variant playlists by master link: %w", err)
 	}
 
 	best := getPlaylistWithBestResolution(variantPlaylists)
@@ -35,13 +35,15 @@ func downloadSingleVideo(videoID string) {
 
 	tsFiles, err := downloadTSFiles(dir, videoInfo.title, best)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("cannot download ts files: %w", err)
 	}
 
-	err = concatTSToResult(tsFiles, "./result.mp4")
+	err = concatTSToResult(tsFiles, videoInfo.title+".mp4")
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("cannot concat ts files to mp4: %w", err)
 	}
+
+	return nil
 }
 
 func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist) ([]string, error) {
@@ -98,17 +100,18 @@ func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist
 		fileName := dirName + "/" + namePrefix + "_" + strconv.Itoa(segmentIndex) + ".ts"
 		file, err := os.Create(fileName)
 		if err != nil {
-			panic(err)
+			return nil, fmt.Errorf("cannot create file for ts-data: %w", err)
 		}
+		defer func() { _ = file.Close() }()
 
 		io.Copy(file, resp.Body)
-		file.Close()
 
 		listOfFiles = append(listOfFiles, fileName)
 
 		fmt.Printf("\rLoaded: %d%%", 100*(segmentIndex+1)/howMany)
 	}
 	fmt.Println()
+
 	return listOfFiles, nil
 }
 

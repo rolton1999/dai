@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 )
 
@@ -15,14 +16,23 @@ func main() {
 	}
 
 	linkType := analyzeArgURL(url)
+
 	switch linkType {
 	case singleVideo:
 		videoID, err := getVideoIDFromArgURL(url)
-		if err != nil {
-			panic(err)
-		}
-		downloadSingleVideo(videoID)
+		fatalIfError(err)
+
+		err = downloadSingleVideo(videoID)
+		fatalIfError(err)
+
 	case playlist:
 		panic("not implemented")
+	}
+}
+
+func fatalIfError(err error) {
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
 }
