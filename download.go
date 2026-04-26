@@ -24,26 +24,36 @@ func downloadSingleVideo(videoID string) {
 		panic(err)
 	}
 
-	variantPlaylists = sortByResulutionDesc(variantPlaylists)
+	best := getPlaylistWithBestResolution(variantPlaylists)
 
 	stopGettingInfoMessage()
 
-	err = downloadTSFiles("tmp", videoInfo.title, variantPlaylists[0])
+	const dir = ".tmp"
+	defer func() {
+		_ = os.RemoveAll(dir)
+	}()
+
+	tsFiles, err := downloadTSFiles(dir, videoInfo.title, best)
+	if err != nil {
+		panic(err)
+	}
+
+	err = concatTSToResult(tsFiles, "./result.mp4")
 	if err != nil {
 		panic(err)
 	}
 }
 
-func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist) error {
+func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist) ([]string, error) {
 	resp, err := http.Get(playlist.link)
 	if err != nil {
-		return fmt.Errorf("cannot get variantPlaylist link: %w", err)
+		return nil, fmt.Errorf("cannot get variantPlaylist link: %w", err)
 	}
 
 	const readWriteMode = 0777
 	err = os.Mkdir(dirName, readWriteMode)
 	if err != nil {
-		return fmt.Errorf("cannot create temp dir: %w", err)
+		return nil, fmt.Errorf("cannot create temp dir: %w", err)
 	}
 
 	// #EXTM3U
@@ -82,7 +92,7 @@ func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist
 		link := prefix + "/" + segment
 		resp, err = http.Get(link)
 		if err != nil {
-			return fmt.Errorf("cannot get first segment link: %w", err)
+			return nil, fmt.Errorf("cannot get first segment link: %w", err)
 		}
 
 		fileName := dirName + "/" + namePrefix + "_" + strconv.Itoa(segmentIndex) + ".ts"
@@ -99,32 +109,37 @@ func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist
 		fmt.Printf("\rLoaded: %d%%", 100*(segmentIndex+1)/howMany)
 	}
 	fmt.Println()
+	return listOfFiles, nil
+}
 
-	out := "./out.mp4"
-	stopConvertingMessage := spinningMessage("converting", "Done: "+out)
+func concatTSToResult(tsFiles []string, resultName string) error {
+	stopConvertingMessage := spinningMessage("converting", "Done: "+resultName)
 
 	// write concat list file for ffmpeg concat demuxer
-	listPath := "concat.txt"
+	listPath := ".concat.txt"
+
 	listF, err := os.Create(listPath)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("cannot create list file: %w", err)
 	}
+	defer func() {
+		listF.Close()
+		_ = os.Remove(listPath)
+	}()
 
-	for _, t := range listOfFiles {
-		// ffmpeg concat demuxer requires: file 'path'
+	// ffmpeg concat demuxer requires: file 'path'
+	for _, t := range tsFiles {
 		fmt.Fprintf(listF, "file '%s'\n", t)
 	}
-	listF.Close()
 
-	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", "-bsf:a", "aac_adtstoasc", out)
+	cmd := exec.Command(
+		"ffmpeg", "-f", "concat", "-safe", "0", "-i", listPath,
+		"-c", "copy", "-bsf:a", "aac_adtstoasc", resultName)
 	// cmd.Stdout = os.Stdout
 	// cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		panic(err)
+		return fmt.Errorf("cannot exec ffmpeg: %w", err)
 	}
-
-	os.Remove(listPath)
-	os.RemoveAll(dirName)
 
 	stopConvertingMessage()
 

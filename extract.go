@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -148,18 +147,14 @@ func variantPlaylistFromBytes(meta []byte, link []byte) (variantPlaylist, error)
 	return s, nil
 }
 
-func sortByResulutionDesc(d []variantPlaylist) []variantPlaylist {
-	sort.Slice(d, func(i, j int) bool {
-		return !d[i].resolution.Less(d[j].resolution)
-	})
-	return d
-}
-
-func sortByResulutionInc(d []variantPlaylist) []variantPlaylist {
-	sort.Slice(d, func(i, j int) bool {
-		return d[i].resolution.Less(d[j].resolution)
-	})
-	return d
+func getPlaylistWithBestResolution(d []variantPlaylist) variantPlaylist {
+	i := 0
+	for j := range d {
+		if d[i].resolution.Less(d[j].resolution) {
+			i = j
+		}
+	}
+	return d[i]
 }
 
 func (s *variantPlaylist) getPlayListLinkPrefix() string {
