@@ -40,11 +40,11 @@ func main() {
 }
 
 func downloadSingleVideo(videoID string) {
+	stopGettingInfoMessage := spinningMessage("Getting info", "Got video info successfully")
 	videoInfo, err := getVideoInfo(videoID)
 	if err != nil {
 		panic(err)
 	}
-	// fmt.Println("got videoInfo: ", videoInfo)
 
 	variantPlaylists, err := getVariantPlaylists(videoInfo.masterPlaylistLink)
 	if err != nil {
@@ -52,6 +52,8 @@ func downloadSingleVideo(videoID string) {
 	}
 
 	variantPlaylists = sortByResulutionDesc(variantPlaylists)
+
+	stopGettingInfoMessage()
 
 	err = downloadTSFiles("tmp", videoInfo.title, variantPlaylists[0])
 	if err != nil {
@@ -89,6 +91,8 @@ func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist
 	// #EXT-X-ENDLIST
 
 	body, err := io.ReadAll(resp.Body)
+	// fmt.Println("body: ", string(body))
+	// os.Exit(0)
 	resp.Body.Close()
 
 	prefix := playlist.getPlayListLinkPrefix()
@@ -98,8 +102,8 @@ func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist
 	namePrefix = strings.ReplaceAll(namePrefix, " ", "_")
 	namePrefix = strings.ReplaceAll(namePrefix, "/", "")
 
-	howMany := (len(split) - 7) / 2
-	fmt.Printf("Gonna load %d fragments\n", howMany)
+	howMany := (len(split) - 6) / 2
+	// fmt.Printf("Gonna load %d fragments\n", howMany)
 	listOfFiles := make([]string, 0, howMany)
 	for segmentIndex, i := 0, 7; i < len(split); segmentIndex, i = segmentIndex+1, i+2 {
 		segment := string(split[i])
@@ -123,19 +127,9 @@ func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist
 		fmt.Printf("\rLoaded: %d%%", 100*(segmentIndex+1)/howMany)
 	}
 	fmt.Println()
-	done := make(chan struct{})
-	go func() {
-		frames := []string{"/", "-", "\\", "|"}
-		for frameI := 0; ; frameI = (frameI + 1) % len(frames) {
-			select {
-			case <-done:
-				return
-			default:
-			}
-			fmt.Printf("\r%s converting...", frames[frameI])
-			time.Sleep(200 * time.Millisecond)
-		}
-	}()
+
+	out := "./out.mp4"
+	stopConvertingMessage := spinningMessage("converting", "Done: "+out)
 
 	// write concat list file for ffmpeg concat demuxer
 	listPath := "concat.txt"
@@ -150,7 +144,6 @@ func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist
 	}
 	listF.Close()
 
-	out := "./out.mp4"
 	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", "-bsf:a", "aac_adtstoasc", out)
 	// cmd.Stdout = os.Stdout
 	// cmd.Stderr = os.Stderr
@@ -161,9 +154,10 @@ func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist
 	// optional: remove concat list
 	os.Remove(listPath)
 	os.RemoveAll(dirName)
-	close(done)
 
-	fmt.Println("done:", out)
+	stopConvertingMessage()
+
+	// fmt.Println("done:", out)
 
 	return nil
 }
@@ -201,4 +195,36 @@ func getVariantPlaylists(m3u8Link string) ([]variantPlaylist, error) {
 	}
 
 	return variantPlaylists, nil
+}
+
+func spinningMessage(message string, after string) func() {
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		frames := []string{"/", "-", "\\", "|"}
+
+		defer func() {
+			// need to perfectly vanish the line by \r
+			for len(after) < len(message)+10 /*5 for spin signs and `...`*/ {
+				after += " "
+			}
+			fmt.Printf("\r%s\n", after)
+			close(done)
+		}()
+
+		for frameI := 0; ; frameI = (frameI + 1) % len(frames) {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			fmt.Printf("\r%s %s...", frames[frameI], message)
+			time.Sleep(200 * time.Millisecond)
+		}
+	}()
+
+	return func() {
+		close(stop)
+		<-done
+	}
 }
