@@ -25,11 +25,21 @@ func main() {
 		panic("url should not be empty")
 	}
 
-	videoID, err := getVideoID(url)
-	if err != nil {
-		panic(err)
+	linkType := analyzeArgURL(url)
+	switch linkType {
+	case singleVideo:
+		videoID, err := getVideoIDFromArgURL(url)
+		if err != nil {
+			panic(err)
+		}
+		downloadSingleVideo(videoID)
+	case playlist:
+		panic("not implemented")
 	}
 
+}
+
+func downloadSingleVideo(videoID string) {
 	videoInfo, err := getVideoInfo(videoID)
 	if err != nil {
 		panic(err)
@@ -191,15 +201,4 @@ func getVariantPlaylists(m3u8Link string) ([]variantPlaylist, error) {
 	}
 
 	return variantPlaylists, nil
-}
-
-func getVideoID(url string) (string, error) {
-	url = strings.TrimSuffix(url, "/")
-
-	i := strings.LastIndex(url, "/")
-	if i == -1 {
-		return "", fmt.Errorf("cannot find the video id in ulr: %s", url)
-	}
-
-	return url[i+1:], nil
 }
