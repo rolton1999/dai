@@ -6,8 +6,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // how to load m3u8
@@ -32,7 +34,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("got videoInfo: ", videoInfo)
+	// fmt.Println("got videoInfo: ", videoInfo)
 
 	variantPlaylists, err := getVariantPlaylists(videoInfo.masterPlaylistLink)
 	if err != nil {
@@ -45,8 +47,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	fmt.Println("done")
 }
 
 func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist) error {
@@ -90,6 +90,7 @@ func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist
 
 	howMany := (len(split) - 7) / 2
 	fmt.Printf("Gonna load %d fragments\n", howMany)
+	listOfFiles := make([]string, 0, howMany)
 	for segmentIndex, i := 0, 7; i < len(split); segmentIndex, i = segmentIndex+1, i+2 {
 		segment := string(split[i])
 		link := prefix + "/" + segment
@@ -107,9 +108,52 @@ func downloadTSFiles(dirName string, namePrefix string, playlist variantPlaylist
 		io.Copy(file, resp.Body)
 		file.Close()
 
+		listOfFiles = append(listOfFiles, fileName)
+
 		fmt.Printf("\rLoaded: %d%%", 100*(segmentIndex+1)/howMany)
 	}
 	fmt.Println()
+	done := make(chan struct{})
+	go func() {
+		frames := []string{"/", "-", "\\", "|"}
+		for frameI := 0; ; frameI = (frameI + 1) % len(frames) {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			fmt.Printf("\r%s converting...", frames[frameI])
+			time.Sleep(200 * time.Millisecond)
+		}
+	}()
+
+	// write concat list file for ffmpeg concat demuxer
+	listPath := "concat.txt"
+	listF, err := os.Create(listPath)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, t := range listOfFiles {
+		// ffmpeg concat demuxer requires: file 'path'
+		fmt.Fprintf(listF, "file '%s'\n", t)
+	}
+	listF.Close()
+
+	out := "./out.mp4"
+	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", "-bsf:a", "aac_adtstoasc", out)
+	// cmd.Stdout = os.Stdout
+	// cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		panic(err)
+	}
+
+	// optional: remove concat list
+	os.Remove(listPath)
+	os.RemoveAll(dirName)
+	close(done)
+
+	fmt.Println("done:", out)
 
 	return nil
 }
