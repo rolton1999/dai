@@ -1,4 +1,6 @@
 dai
 *.ts
+*.json
+*.js
 *.mp4
 ./tmp
