@@ -81,7 +81,8 @@ func (s variantPlaylist) String() string {
 
 // meta: #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=156000,FRAME-RATE=29.97,CODECS="avc1.4d400c, mp4a.40.2",RESOLUTION=256x144
 func variantPlaylistFromBytes(meta []byte, link []byte) (variantPlaylist, error) {
-	var s variantPlaylist
+	var playList variantPlaylist
+
 	// skip #EXT-X-STREAM-INF:PROGRAM-ID=1
 	firstComma := bytes.Index(meta, []byte{','})
 	bytes := meta[firstComma+1:]
@@ -112,39 +113,39 @@ func variantPlaylistFromBytes(meta []byte, link []byte) (variantPlaylist, error)
 		case 0:
 			bandwidth, e := strconv.Atoi(got)
 			if e != nil {
-				return s, fmt.Errorf("cannot parse bandwidth")
+				return playList, fmt.Errorf("cannot parse bandwidth: %s", got)
 			}
-			s.bandwidth = bandwidth
+			playList.bandwidth = bandwidth
 		case 1:
 			frameRate, e := strconv.ParseFloat(got, 63)
 			if e != nil {
-				return s, fmt.Errorf("cannot parse frameRate")
+				return playList, fmt.Errorf("cannot parse frameRate: %s", got)
 			}
-			s.frameRate = frameRate
+			playList.frameRate = frameRate
 		case 2:
 			codecs := strings.Split(got, ",")
 			for _, c := range codecs {
-				s.codecs = append(s.codecs, strings.TrimSpace(c))
+				playList.codecs = append(playList.codecs, strings.TrimSpace(c))
 			}
 		case 3:
 			split := strings.Split(got, "x")
 			if len(split) != 2 {
-				return s, fmt.Errorf("cannot parse resolution")
+				return playList, fmt.Errorf("cannot parse resolution: %s", got)
 			}
 			x, _ := strconv.Atoi(split[0])
 			y, _ := strconv.Atoi(split[1])
-			s.resolution = resolution{x, y}
+			playList.resolution = resolution{x, y}
 		default:
-			panic("unknown stream field" + got + s.String())
+			return variantPlaylist{}, fmt.Errorf("cannot parse EXTM3U, unknown field: %s", got)
 		}
 
 		i = commaI + inc
 		field += 1
 	}
 
-	s.link = string(link)
+	playList.link = string(link)
 
-	return s, nil
+	return playList, nil
 }
 
 func getPlaylistWithBestResolution(d []variantPlaylist) variantPlaylist {

@@ -50,5 +50,6 @@ func getVideoIDFromArgURL(url string) (string, error) {
 }
 
 func getPlaylistIDFromArgURL(url string) (string, error) {
-	panic("not implemented")
+	_ = url
+	return "", fmt.Errorf("not implemented")
 }
