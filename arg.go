@@ -50,6 +50,12 @@ func getVideoIDFromArgURL(url string) (string, error) {
 }
 
 func getPlaylistIDFromArgURL(url string) (string, error) {
-	_ = url
-	return "", fmt.Errorf("not implemented")
+	url = strings.TrimSuffix(url, "/")
+
+	i := strings.LastIndex(url, "/")
+	if i == -1 {
+		return "", fmt.Errorf("cannot find the playlist id in ulr: %s", url)
+	}
+
+	return url[i+1:], nil
 }

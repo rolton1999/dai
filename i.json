@@ -1,0 +1,300 @@
+{
+  "results": [
+    {
+      "id": "58a151e314759216e05e3f6ed33b85b8",
+      "action_reason": {
+        "id": 0,
+        "name": ""
+      },
+      "title": "6. эпурэс л6",
+      "description": "",
+      "author": {
+        "id": 19890301,
+        "name": "наука , учеба , электроника",
+        "avatar_url": "https://static.rutubelist.ru/static/img/_thumb_default_05.png",
+        "site_url": "https://rutube.ru/video/person/19890301/"
+      },
+      "category": {
+        "id": 52,
+        "short_name": "",
+        "name": "Наука",
+        "category_url": "https://rutube.ru/video/category/52/",
+        "for_kids": false
+      },
+      "hits": 16,
+      "thumbnail_url": "https://pic.rtbcdn.ru/video/2024-12-22/9f/5f/9f5f798e89ab0a7c9d4259e4e274db5b.jpg",
+      "created_ts": "2024-12-22T12:06:59",
+      "publication_ts": "2024-12-22T12:18:40",
+      "duration": 3954,
+      "feed_name": "наука , учеба , электроника",
+      "feed_url": "https://rutube.ru/video/person/19890301/",
+      "video_url": "https://rutube.ru/video/58a151e314759216e05e3f6ed33b85b8/",
+      "embed_url": "https://rutube.ru/play/embed/58a151e314759216e05e3f6ed33b85b8",
+      "is_hidden": false,
+      "is_deleted": false,
+      "is_adult": false,
+      "is_locked": false,
+      "is_audio": false,
+      "is_paid": false,
+      "is_official": false,
+      "is_livestream": false,
+      "origin_type": "rtb",
+      "stream_type": null,
+      "product_id": null,
+      "is_original_content": false,
+      "kind_sign_for_user": false,
+      "pg_rating": {
+        "age": 12,
+        "logo": "https://pic.rtbcdn.ru/agerestriction/99/0e/990e87f25d8689833de24c0eb7eaec81.png"
+      }
+    },
+    {
+      "id": "0e65d3ed23e34eeb5bb29b60095b961b",
+      "action_reason": {
+        "id": 0,
+        "name": ""
+      },
+      "title": "1. эпурэс л1",
+      "description": "",
+      "author": {
+        "id": 19890301,
+        "name": "наука , учеба , электроника",
+        "avatar_url": "https://static.rutubelist.ru/static/img/_thumb_default_05.png",
+        "site_url": "https://rutube.ru/video/person/19890301/"
+      },
+      "category": {
+        "id": 17,
+        "short_name": "",
+        "name": "Обучение",
+        "category_url": "https://rutube.ru/video/category/17/",
+        "for_kids": false
+      },
+      "hits": 51,
+      "thumbnail_url": "https://pic.rtbcdn.ru/video/2024-12-22/07/a0/07a01e83984cc0fd9f296f190da5bd6d.jpg",
+      "created_ts": "2024-12-22T12:06:31",
+      "publication_ts": "2024-12-22T12:19:22",
+      "duration": 4919,
+      "feed_name": "наука , учеба , электроника",
+      "feed_url": "https://rutube.ru/video/person/19890301/",
+      "video_url": "https://rutube.ru/video/0e65d3ed23e34eeb5bb29b60095b961b/",
+      "embed_url": "https://rutube.ru/play/embed/0e65d3ed23e34eeb5bb29b60095b961b",
+      "is_hidden": false,
+      "is_deleted": false,
+      "is_adult": false,
+      "is_locked": false,
+      "is_audio": false,
+      "is_paid": false,
+      "is_official": false,
+      "is_livestream": false,
+      "origin_type": "rtb",
+      "stream_type": null,
+      "product_id": null,
+      "is_original_content": false,
+      "kind_sign_for_user": false,
+      "pg_rating": {
+        "age": 12,
+        "logo": "https://pic.rtbcdn.ru/agerestriction/99/0e/990e87f25d8689833de24c0eb7eaec81.png"
+      }
+    },
+    {
+      "id": "e502d7349d1655634e44ec0bde8bd698",
+      "action_reason": {
+        "id": 0,
+        "name": ""
+      },
+      "title": "2. эпурэс л2",
+      "description": "",
+      "author": {
+        "id": 19890301,
+        "name": "наука , учеба , электроника",
+        "avatar_url": "https://static.rutubelist.ru/static/img/_thumb_default_05.png",
+        "site_url": "https://rutube.ru/video/person/19890301/"
+      },
+      "category": {
+        "id": 17,
+        "short_name": "",
+        "name": "Обучение",
+        "category_url": "https://rutube.ru/video/category/17/",
+        "for_kids": false
+      },
+      "hits": 8,
+      "thumbnail_url": "https://pic.rtbcdn.ru/video/2024-12-22/20/2f/202fda52d6c99bc8c26be3570120d11e.jpg",
+      "created_ts": "2024-12-22T12:06:14",
+      "publication_ts": "2024-12-22T12:19:19",
+      "duration": 7638,
+      "feed_name": "наука , учеба , электроника",
+      "feed_url": "https://rutube.ru/video/person/19890301/",
+      "video_url": "https://rutube.ru/video/e502d7349d1655634e44ec0bde8bd698/",
+      "embed_url": "https://rutube.ru/play/embed/e502d7349d1655634e44ec0bde8bd698",
+      "is_hidden": false,
+      "is_deleted": false,
+      "is_adult": false,
+      "is_locked": false,
+      "is_audio": false,
+      "is_paid": false,
+      "is_official": false,
+      "is_livestream": false,
+      "origin_type": "rtb",
+      "stream_type": null,
+      "product_id": null,
+      "is_original_content": false,
+      "kind_sign_for_user": false,
+      "pg_rating": {
+        "age": 12,
+        "logo": "https://pic.rtbcdn.ru/agerestriction/99/0e/990e87f25d8689833de24c0eb7eaec81.png"
+      }
+    },
+    {
+      "id": "5cb62def93420af11281eddb73c2a28e",
+      "action_reason": {
+        "id": 0,
+        "name": ""
+      },
+      "title": "5. эпурэс л5",
+      "description": "",
+      "author": {
+        "id": 19890301,
+        "name": "наука , учеба , электроника",
+        "avatar_url": "https://static.rutubelist.ru/static/img/_thumb_default_05.png",
+        "site_url": "https://rutube.ru/video/person/19890301/"
+      },
+      "category": {
+        "id": 17,
+        "short_name": "",
+        "name": "Обучение",
+        "category_url": "https://rutube.ru/video/category/17/",
+        "for_kids": false
+      },
+      "hits": 17,
+      "thumbnail_url": "https://pic.rtbcdn.ru/video/2024-12-22/d8/ce/d8cef204272a66f6e981cd2ac915169a.jpg",
+      "created_ts": "2024-12-22T12:06:02",
+      "publication_ts": "2024-12-22T12:19:36",
+      "duration": 5274,
+      "feed_name": "наука , учеба , электроника",
+      "feed_url": "https://rutube.ru/video/person/19890301/",
+      "video_url": "https://rutube.ru/video/5cb62def93420af11281eddb73c2a28e/",
+      "embed_url": "https://rutube.ru/play/embed/5cb62def93420af11281eddb73c2a28e",
+      "is_hidden": false,
+      "is_deleted": false,
+      "is_adult": false,
+      "is_locked": false,
+      "is_audio": false,
+      "is_paid": false,
+      "is_official": false,
+      "is_livestream": false,
+      "origin_type": "rtb",
+      "stream_type": null,
+      "product_id": null,
+      "is_original_content": false,
+      "kind_sign_for_user": false,
+      "pg_rating": {
+        "age": 12,
+        "logo": "https://pic.rtbcdn.ru/agerestriction/99/0e/990e87f25d8689833de24c0eb7eaec81.png"
+      }
+    },
+    {
+      "id": "78265c116dc288ea65d436b602804026",
+      "action_reason": {
+        "id": 0,
+        "name": ""
+      },
+      "title": "4. эпурэс л4",
+      "description": "",
+      "author": {
+        "id": 19890301,
+        "name": "наука , учеба , электроника",
+        "avatar_url": "https://static.rutubelist.ru/static/img/_thumb_default_05.png",
+        "site_url": "https://rutube.ru/video/person/19890301/"
+      },
+      "category": {
+        "id": 17,
+        "short_name": "",
+        "name": "Обучение",
+        "category_url": "https://rutube.ru/video/category/17/",
+        "for_kids": false
+      },
+      "hits": 10,
+      "thumbnail_url": "https://pic.rtbcdn.ru/video/2024-12-22/42/3c/423c09802d37e2f28b87978b829687d7.jpg",
+      "created_ts": "2024-12-22T12:05:40",
+      "publication_ts": "2024-12-22T12:19:34",
+      "duration": 3487,
+      "feed_name": "наука , учеба , электроника",
+      "feed_url": "https://rutube.ru/video/person/19890301/",
+      "video_url": "https://rutube.ru/video/78265c116dc288ea65d436b602804026/",
+      "embed_url": "https://rutube.ru/play/embed/78265c116dc288ea65d436b602804026",
+      "is_hidden": false,
+      "is_deleted": false,
+      "is_adult": false,
+      "is_locked": false,
+      "is_audio": false,
+      "is_paid": false,
+      "is_official": false,
+      "is_livestream": false,
+      "origin_type": "rtb",
+      "stream_type": null,
+      "product_id": null,
+      "is_original_content": false,
+      "kind_sign_for_user": false,
+      "pg_rating": {
+        "age": 12,
+        "logo": "https://pic.rtbcdn.ru/agerestriction/99/0e/990e87f25d8689833de24c0eb7eaec81.png"
+      }
+    },
+    {
+      "id": "02e1fec5e621e32aca8705ef8ca056be",
+      "action_reason": {
+        "id": 0,
+        "name": ""
+      },
+      "title": "3. эпурэс л3",
+      "description": "",
+      "author": {
+        "id": 19890301,
+        "name": "наука , учеба , электроника",
+        "avatar_url": "https://static.rutubelist.ru/static/img/_thumb_default_05.png",
+        "site_url": "https://rutube.ru/video/person/19890301/"
+      },
+      "category": {
+        "id": 52,
+        "short_name": "",
+        "name": "Наука",
+        "category_url": "https://rutube.ru/video/category/52/",
+        "for_kids": false
+      },
+      "hits": 36,
+      "thumbnail_url": "https://pic.rtbcdn.ru/video/2024-12-22/ae/8f/ae8f31d62cacb501a4b2f21c98dc2721.jpg",
+      "created_ts": "2024-12-22T12:05:37",
+      "publication_ts": "2024-12-22T12:19:19",
+      "duration": 5871,
+      "feed_name": "наука , учеба , электроника",
+      "feed_url": "https://rutube.ru/video/person/19890301/",
+      "video_url": "https://rutube.ru/video/02e1fec5e621e32aca8705ef8ca056be/",
+      "embed_url": "https://rutube.ru/play/embed/02e1fec5e621e32aca8705ef8ca056be",
+      "is_hidden": false,
+      "is_deleted": false,
+      "is_adult": false,
+      "is_locked": false,
+      "is_audio": false,
+      "is_paid": false,
+      "is_official": false,
+      "is_livestream": false,
+      "origin_type": "rtb",
+      "stream_type": null,
+      "product_id": null,
+      "is_original_content": false,
+      "kind_sign_for_user": false,
+      "pg_rating": {
+        "age": 12,
+        "logo": "https://pic.rtbcdn.ru/agerestriction/99/0e/990e87f25d8689833de24c0eb7eaec81.png"
+      }
+    }
+  ],
+  "has_next": false,
+  "next": null,
+  "previous": null,
+  "page": 1,
+  "per_page": 20,
+  "num_pages": 1,
+  "detail": {},
+  "author_sort_order": "author"
+}

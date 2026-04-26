@@ -37,15 +37,16 @@ func run() error {
 			return err
 		}
 
-		err = downloadSingleVideo(videoID)
+		return downloadSingleVideo(videoID)
+
+	case playlist:
+		playlistID, err := getPlaylistIDFromArgURL(url)
 		if err != nil {
 			return err
 		}
 
-	case playlist:
-		_, err := getPlaylistIDFromArgURL(url)
+		return downloadPlaylist(playlistID)
 
-		return err
 	case notExpected:
 		return notExpectedContentLink
 	}
