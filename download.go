@@ -49,7 +49,6 @@ func downloadPlaylist(playlistID string) error {
 
 	stopGettingInfoMessage()
 
-	fmt.Println("playlist info: ", playlistInfo)
 	for _, id := range playlistInfo.videoIDs {
 		downloadSingleVideo(id)
 	}
