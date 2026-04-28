@@ -6,8 +6,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 func getVariantPlaylists(masterPlaylistLink string) ([]variantPlaylist, error) {
@@ -169,7 +171,23 @@ func (s *variantPlaylist) getPlayListLinkPrefix() string {
 	return s.link[:li]
 }
 
-func downloadTSFilesToDir(dirName string, namePrefix string, playlist variantPlaylist) ([]string, error) {
+// #EXTM3U
+// #EXT-X-TARGETDURATION:7
+// #EXT-X-ALLOW-CACHE:YES
+// #EXT-X-PLAYLIST-TYPE:VOD
+// #EXT-X-VERSION:3
+// #EXT-X-MEDIA-SEQUENCE:1
+// #EXTINF:3.937,
+// e742a021efe5453586f12d4d08a836fe.mp4/segment-1-v1-a1.ts <- 7th line
+// #EXTINF:0.133,
+// e742a021efe5453586f12d4d08a836fe.mp4/segment-2-v1-a1.ts
+// #EXTINF:6.607,
+// e742a021efe5453586f12d4d08a836fe.mp4/segment-3-v1-a1.ts
+// #EXTINF:5.339,
+// ....
+// e742a021efe5453586f12d4d08a836fe.mp4/segment-1157-v1-a1.ts
+// #EXT-X-ENDLIST
+func downloadTSFilesToDir(logger logger, dirName string, expectedName string, playlist variantPlaylist) ([]string, error) {
 	resp, err := http.Get(playlist.link)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get variantPlaylist link: %w", err)
@@ -181,59 +199,148 @@ func downloadTSFilesToDir(dirName string, namePrefix string, playlist variantPla
 		return nil, fmt.Errorf("cannot create temp dir: %w", err)
 	}
 
-	// #EXTM3U
-	// #EXT-X-TARGETDURATION:7
-	// #EXT-X-ALLOW-CACHE:YES
-	// #EXT-X-PLAYLIST-TYPE:VOD
-	// #EXT-X-VERSION:3
-	// #EXT-X-MEDIA-SEQUENCE:1
-	// #EXTINF:3.937,
-	// e742a021efe5453586f12d4d08a836fe.mp4/segment-1-v1-a1.ts <- 7th line
-	// #EXTINF:0.133,
-	// e742a021efe5453586f12d4d08a836fe.mp4/segment-2-v1-a1.ts
-	// #EXTINF:6.607,
-	// e742a021efe5453586f12d4d08a836fe.mp4/segment-3-v1-a1.ts
-	// #EXTINF:5.339,
-	// ....
-	// e742a021efe5453586f12d4d08a836fe.mp4/segment-1157-v1-a1.ts
-	// #EXT-X-ENDLIST
-
 	body, err := io.ReadAll(resp.Body)
-	// fmt.Println("body: ", string(body))
-	// os.Exit(0)
 	resp.Body.Close()
 
-	prefix := playlist.getPlayListLinkPrefix()
+	linkPrefix := playlist.getPlayListLinkPrefix()
 
 	split := bytes.Split(body, []byte{'\n'})
 
-	namePrefix = strings.ReplaceAll(namePrefix, " ", "_")
-	namePrefix = strings.ReplaceAll(namePrefix, "/", "")
+	expectedName = strings.ReplaceAll(expectedName, " ", "_")
+	expectedName = strings.ReplaceAll(expectedName, "/", "")
 
-	howMany := (len(split) - 6 + 1) / 2
+	tmpFilePrefix := filepath.Join(dirName, expectedName)
+
+	parLoader := newParLoader()
+
+	tasks := make(chan task, 10)
+	resultCh := parLoader.start(10, tasks)
+	stopLoading := make(chan struct{})
+
+	howMany := (len(split) - 6 + 1) / 2 // see comment before the func
+
 	listOfFiles := make([]string, 0, howMany)
-	for segmentIndex, i := 0, 7; i < len(split); segmentIndex, i = segmentIndex+1, i+2 {
-		segment := string(split[i])
-		link := prefix + "/" + segment
-		resp, err = http.Get(link)
-		if err != nil {
-			return nil, fmt.Errorf("cannot get first segment link: %w", err)
+
+	wg := sync.WaitGroup{}
+
+	wg.Go(func() {
+		for i := 1; ; i++ {
+			result, ok := <-resultCh
+			if !ok {
+				return
+			}
+			if result.err != nil {
+				close(stopLoading)
+				err = result.err
+				return
+			}
+			listOfFiles = append(listOfFiles, result.fileName)
+			logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*i/howMany))
 		}
+	})
 
-		fileName := dirName + "/" + namePrefix + "_" + strconv.Itoa(segmentIndex) + ".ts"
-		file, err := os.Create(fileName)
-		if err != nil {
-			return nil, fmt.Errorf("cannot create file for ts-data: %w", err)
+	wg.Go(func() {
+		defer close(tasks)
+		for segmentIndex, i := 0, 7; i < len(split); segmentIndex, i = segmentIndex+1, i+2 {
+			segment := string(split[i])
+			link := linkPrefix + "/" + segment
+
+			select {
+			case tasks <- task{link, tmpFilePrefix, segmentIndex}:
+			case <-stopLoading:
+				return
+			}
 		}
-		defer func() { _ = file.Close() }()
+	})
 
-		io.Copy(file, resp.Body)
+	wg.Wait()
+	parLoader.stop()
 
-		listOfFiles = append(listOfFiles, fileName)
-
-		fmt.Printf("\rLoaded: %d%%", 100*(segmentIndex+1)/howMany)
+	if err != nil {
+		return nil, err
 	}
-	fmt.Println()
 
 	return listOfFiles, nil
+}
+
+type task struct {
+	link          string
+	tmpFilePrefix string
+	segmentIndex  int
+}
+
+type result struct {
+	fileName string
+	err      error
+}
+
+type parLoader interface {
+	start(workers int, takss chan task) chan result
+	stop()
+}
+
+type parLoaderImpl struct {
+	workers int
+	stopCh  chan struct{}
+	doneCh  chan struct{}
+}
+
+func newParLoader() parLoader {
+	return &parLoaderImpl{}
+}
+
+func (wp *parLoaderImpl) start(workers int, tasks chan task) chan result {
+	wp.workers = workers
+	wp.stopCh = make(chan struct{})
+	wp.doneCh = make(chan struct{})
+
+	allDone := make(chan struct{})
+	resultCh := make(chan result)
+
+	for range workers {
+		go func() {
+			defer func() { allDone <- struct{}{} }()
+
+			for {
+				select {
+				case <-wp.stopCh:
+					return
+				case t, ok := <-tasks:
+					if !ok {
+						return
+					}
+					resp, err := http.Get(t.link)
+					if err != nil {
+						resultCh <- result{"", fmt.Errorf("cannot get first segment link: %w", err)}
+					}
+
+					fileName := t.tmpFilePrefix + "_" + strconv.Itoa(t.segmentIndex) + ".ts"
+					file, err := os.Create(fileName)
+					if err != nil {
+						resultCh <- result{"", fmt.Errorf("cannot create file for ts-data: %w", err)}
+					}
+
+					io.Copy(file, resp.Body)
+					_ = file.Close()
+
+					resultCh <- result{fileName, nil}
+				}
+			}
+		}()
+	}
+
+	go func() {
+		for range wp.workers {
+			<-allDone
+		}
+		close(resultCh)
+		close(wp.doneCh)
+	}()
+
+	return resultCh
+}
+
+func (wp *parLoaderImpl) stop() {
+	close(wp.stopCh)
+	<-wp.doneCh
 }

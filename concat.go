@@ -6,8 +6,8 @@ import (
 	"os/exec"
 )
 
-func concatTSToResult(tsFiles []string, resultName string) error {
-	stopConvertingMessage := spinningMessage("converting", "Done: "+resultName)
+func concatTSToResult(logger logger, tsFiles []string, resultName string) error {
+	stopConvertingMessage := spinningMessage(logger, " ~ converting", ": READY")
 
 	// write concat list file for ffmpeg concat demuxer
 	listPath := ".concat.txt"

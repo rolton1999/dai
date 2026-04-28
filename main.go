@@ -30,6 +30,8 @@ func run() error {
 
 	linkType := analyzeArgURL(url)
 
+	logger := newLogger()
+
 	switch linkType {
 	case singleVideo:
 		videoID, err := getVideoIDFromArgURL(url)
@@ -37,7 +39,7 @@ func run() error {
 			return err
 		}
 
-		return downloadSingleVideo(videoID)
+		return downloadSingleVideo(logger, videoID)
 
 	case playlist:
 		playlistID, err := getPlaylistIDFromArgURL(url)
@@ -45,7 +47,7 @@ func run() error {
 			return err
 		}
 
-		return downloadPlaylist(playlistID)
+		return downloadPlaylist(logger, playlistID)
 
 	case notExpected:
 		return notExpectedContentLink

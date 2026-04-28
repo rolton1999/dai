@@ -5,18 +5,47 @@ import (
 	"time"
 )
 
-func spinningMessage(message string, after string) func() {
+type logger interface {
+	NewPrefix(prefix string)
+	UpdateWithSuffix(suffix string)
+	PrintNewLine()
+}
+
+func newLogger() logger {
+	return &loggerImpl{}
+}
+
+type loggerImpl struct {
+	longestLineLen int
+	prefix         string
+}
+
+func (l *loggerImpl) NewPrefix(prefix string) {
+	l.prefix = prefix
+	l.longestLineLen = 0
+}
+
+func (l *loggerImpl) UpdateWithSuffix(suffix string) {
+	s := fmt.Sprintf("%s%s", l.prefix, suffix)
+	l.longestLineLen = max(l.longestLineLen, len(s))
+	for len(s) < l.longestLineLen {
+		s += " "
+	}
+	fmt.Printf("\r%s", s)
+}
+
+func (l *loggerImpl) PrintNewLine() {
+	fmt.Println()
+}
+
+func spinningMessage(logger logger, message string, after string) func() {
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
 		frames := []string{"/", "-", "\\", "|"}
 
 		defer func() {
-			// need to perfectly vanish the line by \r
-			for len(after) < len(message)+5 /*5 for spin signs and `...`*/ {
-				after += " "
-			}
-			fmt.Printf("\r%s\n", after)
+			logger.UpdateWithSuffix(after)
 			close(done)
 		}()
 
@@ -26,7 +55,7 @@ func spinningMessage(message string, after string) func() {
 				return
 			default:
 			}
-			fmt.Printf("\r%s %s...", frames[frameI], message)
+			logger.UpdateWithSuffix(fmt.Sprintf("%s %s", message, frames[frameI]))
 			time.Sleep(200 * time.Millisecond)
 		}
 	}()
