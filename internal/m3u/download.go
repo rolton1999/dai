@@ -30,16 +30,15 @@ import (
 // ....
 // e742a021efe5453586f12d4d08a836fe.mp4/segment-1157-v1-a1.ts
 // #EXT-X-ENDLIST
-func DownloadTSFilesToDir(logger util.Logger, dirName string, expectedName string, playlist VariantPlaylist) ([]string, error) {
+func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPlaylist) ([]string, error) {
+	dirName, err := os.MkdirTemp("", "")
+	if err != nil {
+		return nil, fmt.Errorf("cannot create tmp dir: %w", err)
+	}
+
 	resp, err := http.Get(playlist.Link)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get variantPlaylist link: %w", err)
-	}
-
-	const readWriteMode = 0777
-	err = os.Mkdir(dirName, readWriteMode)
-	if err != nil {
-		return nil, fmt.Errorf("cannot create temp dir: %w", err)
 	}
 
 	body, err := io.ReadAll(resp.Body)
