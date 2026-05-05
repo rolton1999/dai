@@ -1,4 +1,4 @@
-package main
+package m3u
 
 import (
 	"bytes"
@@ -10,9 +10,46 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"dai/internal/util"
 )
 
-func getVariantPlaylists(masterPlaylistLink string) ([]variantPlaylist, error) {
+type Resolution struct {
+	w, h int
+}
+
+func (r Resolution) Less(other Resolution) bool {
+	if r.w == other.w {
+		return r.h < other.h
+	}
+	return r.w < other.w
+}
+
+func (r Resolution) String() string {
+	const template = "%dx%d"
+	return fmt.Sprintf(template, r.w, r.h)
+}
+
+type VariantPlaylist struct {
+	bandwidth  int
+	frameRate  float64
+	codecs     []string
+	resolution Resolution
+	Link       string
+}
+
+func (s VariantPlaylist) String() string {
+	return fmt.Sprintf(
+		"{\n\tbandwidth: %d,\n \tframeRate: %f,\n \tcodecs: %v,\n \tresolution: %s,\n \tlink: %s,\n}",
+		s.bandwidth,
+		s.frameRate,
+		s.codecs,
+		s.resolution,
+		s.Link,
+	)
+}
+
+func GetVariantPlaylists(masterPlaylistLink string) ([]VariantPlaylist, error) {
 	const extM3UPrefix = "#EXTM3U"
 
 	resp, err := http.Get(masterPlaylistLink)
@@ -32,7 +69,7 @@ func getVariantPlaylists(masterPlaylistLink string) ([]variantPlaylist, error) {
 	extM3UBytes = extM3UBytes[len(extM3UPrefix):]
 	extM3UBytes = bytes.TrimSpace(extM3UBytes)
 
-	var variantPlaylists []variantPlaylist
+	var variantPlaylists []VariantPlaylist
 
 	lines := bytes.Split(extM3UBytes, []byte{'\n'})
 
@@ -47,44 +84,9 @@ func getVariantPlaylists(masterPlaylistLink string) ([]variantPlaylist, error) {
 	return variantPlaylists, nil
 }
 
-type resolution struct {
-	w, h int
-}
-
-func (r resolution) Less(other resolution) bool {
-	if r.w == other.w {
-		return r.h < other.h
-	}
-	return r.w < other.w
-}
-
-func (r resolution) String() string {
-	const template = "%dx%d"
-	return fmt.Sprintf(template, r.w, r.h)
-}
-
-type variantPlaylist struct {
-	bandwidth  int
-	frameRate  float64
-	codecs     []string
-	resolution resolution
-	link       string
-}
-
-func (s variantPlaylist) String() string {
-	return fmt.Sprintf(
-		"{\n\tbandwidth: %d,\n \tframeRate: %f,\n \tcodecs: %v,\n \tresolution: %s,\n \tlink: %s,\n}",
-		s.bandwidth,
-		s.frameRate,
-		s.codecs,
-		s.resolution,
-		s.link,
-	)
-}
-
 // meta: #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=156000,FRAME-RATE=29.97,CODECS="avc1.4d400c, mp4a.40.2",RESOLUTION=256x144
-func variantPlaylistFromBytes(meta []byte, link []byte) (variantPlaylist, error) {
-	var playList variantPlaylist
+func variantPlaylistFromBytes(meta []byte, link []byte) (VariantPlaylist, error) {
+	var playList VariantPlaylist
 
 	// skip #EXT-X-STREAM-INF:PROGRAM-ID=1
 	firstComma := bytes.Index(meta, []byte{','})
@@ -137,21 +139,21 @@ func variantPlaylistFromBytes(meta []byte, link []byte) (variantPlaylist, error)
 			}
 			x, _ := strconv.Atoi(split[0])
 			y, _ := strconv.Atoi(split[1])
-			playList.resolution = resolution{x, y}
+			playList.resolution = Resolution{x, y}
 		default:
-			return variantPlaylist{}, fmt.Errorf("cannot parse EXTM3U, unknown field: %s", got)
+			return VariantPlaylist{}, fmt.Errorf("cannot parse EXTM3U, unknown field: %s", got)
 		}
 
 		i = commaI + inc
 		field += 1
 	}
 
-	playList.link = string(link)
+	playList.Link = string(link)
 
 	return playList, nil
 }
 
-func getPlaylistWithBestResolution(d []variantPlaylist) variantPlaylist {
+func GetPlaylistWithBestResolution(d []VariantPlaylist) VariantPlaylist {
 	i := 0
 	for j := range d {
 		if d[i].resolution.Less(d[j].resolution) {
@@ -161,14 +163,14 @@ func getPlaylistWithBestResolution(d []variantPlaylist) variantPlaylist {
 	return d[i]
 }
 
-func (s *variantPlaylist) getPlayListLinkPrefix() string {
+func (s *VariantPlaylist) getPlayListLinkPrefix() string {
 	// s.link:
 	// https://river-4-439.rtbcdn.ru/hls-vod/jTj56pP38b8KlsNyOPuxkw/1777581612/3034/0x5000c500e9cf2c6e/435b723b2f89465bbfd0db7ccbf33bfd.mp4.m3u8?i=256x144_156
 	// need prefix:
 	// https://river-4-439.rtbcdn.ru/hls-vod/h33Jy-1bQMVb3cz8CzX0UQ/1777581666/3034/0x5000c500e9cf2c6e
 
-	li := strings.LastIndex(s.link, "/")
-	return s.link[:li]
+	li := strings.LastIndex(s.Link, "/")
+	return s.Link[:li]
 }
 
 // #EXTM3U
@@ -187,8 +189,8 @@ func (s *variantPlaylist) getPlayListLinkPrefix() string {
 // ....
 // e742a021efe5453586f12d4d08a836fe.mp4/segment-1157-v1-a1.ts
 // #EXT-X-ENDLIST
-func downloadTSFilesToDir(logger logger, dirName string, expectedName string, playlist variantPlaylist) ([]string, error) {
-	resp, err := http.Get(playlist.link)
+func DownloadTSFilesToDir(logger util.Logger, dirName string, expectedName string, playlist VariantPlaylist) ([]string, error) {
+	resp, err := http.Get(playlist.Link)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get variantPlaylist link: %w", err)
 	}

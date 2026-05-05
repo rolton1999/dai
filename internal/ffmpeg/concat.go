@@ -1,13 +1,15 @@
-package main
+package ffmpeg
 
 import (
 	"fmt"
 	"os"
 	"os/exec"
+
+	"dai/internal/util"
 )
 
-func concatTSToResult(logger logger, tsFiles []string, resultName string) error {
-	stopConvertingMessage := spinningMessage(logger, " ~ converting", ": READY")
+func ConcatTSToResult(logger util.Logger, tsFiles []string, resultName string) error {
+	stopConvertingMessage := util.SpinningMessage(logger, " ~ converting", ": READY")
 
 	// write concat list file for ffmpeg concat demuxer
 	listPath := ".concat.txt"

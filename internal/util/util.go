@@ -1,17 +1,17 @@
-package main
+package util
 
 import (
 	"fmt"
 	"time"
 )
 
-type logger interface {
+type Logger interface {
 	NewPrefix(prefix string)
 	UpdateWithSuffix(suffix string)
 	PrintNewLine()
 }
 
-func newLogger() logger {
+func NewLogger() Logger {
 	return &loggerImpl{}
 }
 
@@ -38,7 +38,7 @@ func (l *loggerImpl) PrintNewLine() {
 	fmt.Println()
 }
 
-func spinningMessage(logger logger, message string, after string) func() {
+func SpinningMessage(logger Logger, message string, after string) func() {
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	go func() {

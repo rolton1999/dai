@@ -1,6 +1,9 @@
-dai
+./cmd/dai
 *.ts
 *.json
 *.js
 *.mp4
 ./tmp
+.concat.txt
+./bin/*
+

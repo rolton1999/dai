@@ -1,6 +1,8 @@
-package main
+package run
 
 import (
+	"dai/internal/download"
+	"dai/internal/util"
 	"fmt"
 	"os"
 )
@@ -11,14 +13,7 @@ var (
 	notExpectedContentLink error = fmt.Errorf("not expected content link: only video and playlist are supported")
 )
 
-func main() {
-	if err := run(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-}
-
-func run() error {
+func Run() error {
 	if len(os.Args) == 0 {
 		return withoutArgs
 	}
@@ -30,7 +25,7 @@ func run() error {
 
 	linkType := analyzeArgURL(url)
 
-	logger := newLogger()
+	logger := util.NewLogger()
 
 	switch linkType {
 	case singleVideo:
@@ -39,7 +34,7 @@ func run() error {
 			return err
 		}
 
-		return downloadSingleVideo(logger, videoID)
+		return download.DownloadSingleVideo(logger, videoID)
 
 	case playlist:
 		playlistID, err := getPlaylistIDFromArgURL(url)
@@ -47,7 +42,7 @@ func run() error {
 			return err
 		}
 
-		return downloadPlaylist(logger, playlistID)
+		return download.DownloadPlaylist(logger, playlistID)
 
 	case notExpected:
 		return notExpectedContentLink
