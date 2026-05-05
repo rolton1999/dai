@@ -4,6 +4,6 @@
 *.mp4
 .concat.txt
 
-./tmp
-./bin/
+.tmp
+bin
 
