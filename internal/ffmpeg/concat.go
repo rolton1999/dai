@@ -9,6 +9,12 @@ import (
 )
 
 func ConcatTSToResult(logger util.Logger, tsFiles []string, resultName string) error {
+	defer func() {
+		for _, tsFile := range tsFiles {
+			_ = os.RemoveAll(tsFile)
+		}
+	}()
+
 	stopConvertingMessage := util.SpinningMessage(logger, " ~ converting", ": READY")
 
 	// write concat list file for ffmpeg concat demuxer

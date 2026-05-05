@@ -5,7 +5,6 @@ import (
 	"dai/internal/m3u"
 	"dai/internal/rutube"
 	"dai/internal/util"
-	"os"
 
 	"fmt"
 )
@@ -31,11 +30,6 @@ func DownloadSingleVideo(logger util.Logger, videoID string) error {
 	if err != nil {
 		return fmt.Errorf("cannot download ts files: %w", err)
 	}
-	defer func() {
-		for _, tsFile := range tsFiles {
-			_ = os.RemoveAll(tsFile)
-		}
-	}()
 
 	err = ffmpeg.ConcatTSToResult(logger, tsFiles, resultingFileName)
 	if err != nil {
