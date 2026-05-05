@@ -3,28 +3,34 @@ package util
 type TaskType[TResult any] = func() TResult
 
 type WorkerPool[TResult any] interface {
-	Start(workers int, tasks <-chan TaskType[TResult]) <-chan TResult
+	Start(workers int) <-chan TResult
 	Submit(task TaskType[TResult])
+	DrainAndStop()
 	Stop()
 }
 
 type workerPoolImpl[TResult any] struct {
+	tasks        chan TaskType[TResult]
 	stopCh       chan struct{}
 	allStoppedCh chan struct{}
 }
 
-func NewWorkerPool[TResult any]() WorkerPool[TResult] {
-	return &workerPoolImpl[TResult]{}
+func NewWorkerPool[TResult any](queueSize int) WorkerPool[TResult] {
+	return &workerPoolImpl[TResult]{
+		tasks:        make(chan TaskType[TResult], queueSize),
+		stopCh:       make(chan struct{}),
+		allStoppedCh: make(chan struct{}),
+	}
 }
 
-func (wp *workerPoolImpl[TResult]) Submit(tasks TaskType[TResult]) {
-
+func (wp *workerPoolImpl[TResult]) Submit(task TaskType[TResult]) {
+	select {
+	case wp.tasks <- task:
+	case <-wp.stopCh:
+	}
 }
 
-func (wp *workerPoolImpl[TResult]) Start(workers int, tasks <-chan TaskType[TResult]) <-chan TResult {
-	wp.stopCh = make(chan struct{})
-	wp.allStoppedCh = make(chan struct{})
-
+func (wp *workerPoolImpl[TResult]) Start(workers int) <-chan TResult {
 	allDone := make(chan struct{})
 	resultCh := make(chan TResult)
 
@@ -36,11 +42,17 @@ func (wp *workerPoolImpl[TResult]) Start(workers int, tasks <-chan TaskType[TRes
 				select {
 				case <-wp.stopCh:
 					return
-				case task, ok := <-tasks:
+				case task, ok := <-wp.tasks:
 					if !ok {
 						return
 					}
-					resultCh <- task()
+					if task == nil {
+						continue
+					}
+					select {
+					case resultCh <- task():
+					case <-wp.stopCh:
+					}
 				}
 			}
 		}()
@@ -50,11 +62,18 @@ func (wp *workerPoolImpl[TResult]) Start(workers int, tasks <-chan TaskType[TRes
 		for range workers {
 			<-allDone
 		}
+		close(allDone)
 		close(resultCh)
 		close(wp.allStoppedCh)
 	}()
 
 	return resultCh
+}
+
+func (wp *workerPoolImpl[TResult]) DrainAndStop() {
+	close(wp.tasks)
+	// all workers done
+	<-wp.allStoppedCh
 }
 
 func (wp *workerPoolImpl[TResult]) Stop() {

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // #EXTM3U
@@ -53,64 +54,72 @@ func DownloadTSFilesToDir(logger util.Logger, dirName string, expectedName strin
 
 	tmpFilePrefix := filepath.Join(dirName, expectedName)
 
-	workerPool := util.NewWorkerPool[result]()
-	tasks := make(chan util.TaskType[result], 10)
+	const (
+		workerPoolQueueSize = 10
+		workers             = 10
+	)
 
-	resultCh := workerPool.Start(10, tasks)
-	stopLoading := make(chan struct{})
+	workerPool := util.NewWorkerPool[result](workerPoolQueueSize)
+
+	resultCh := workerPool.Start(workers)
+	var stopLoading atomic.Bool
 
 	howMany := (len(split) - 6 + 1) / 2 // see comment before the func
 
-	listOfFiles := make([]string, 0, howMany)
+	listOfFiles := make([]string, howMany)
 
 	wg := sync.WaitGroup{}
 
+	// producer
 	wg.Go(func() {
+		defer workerPool.DrainAndStop()
+
+		for segmentIndex, i := 0, 7; i < len(split); segmentIndex, i = segmentIndex+1, i+2 {
+			segment := string(split[i])
+			link := linkPrefix + "/" + segment
+			fileName := tmpFilePrefix + "_" + strconv.Itoa(segmentIndex) + ".ts"
+
+			task := func() result {
+				resp, err := http.Get(link)
+				if err != nil {
+					return result{0, "", fmt.Errorf("cannot get first segment link: %w", err)}
+				}
+
+				file, err := os.Create(fileName)
+				if err != nil {
+					return result{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}
+				}
+
+				io.Copy(file, resp.Body)
+				_ = file.Close()
+
+				return result{segmentIndex, fileName, nil}
+			}
+
+			// in case of any error in forward pipeline steps
+			if stopLoading.Load() {
+				return
+			}
+
+			workerPool.Submit(task)
+		}
+	})
+
+	// consumer
+	wg.Go(func() {
+		defer stopLoading.Store(true)
+
 		for i := 1; ; i++ {
 			result, ok := <-resultCh
 			if !ok {
 				return
 			}
 			if result.err != nil {
-				close(stopLoading)
 				err = result.err
 				return
 			}
-			listOfFiles = append(listOfFiles, result.fileName)
+			listOfFiles[result.segmentIndex] = result.fileName
 			logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*i/howMany))
-		}
-	})
-
-	wg.Go(func() {
-		defer close(tasks)
-		for segmentIndex, i := 0, 7; i < len(split); segmentIndex, i = segmentIndex+1, i+2 {
-			task := func() result {
-				segment := string(split[i])
-				link := linkPrefix + "/" + segment
-
-				resp, err := http.Get(link)
-				if err != nil {
-					return result{"", fmt.Errorf("cannot get first segment link: %w", err)}
-				}
-
-				fileName := tmpFilePrefix + "_" + strconv.Itoa(segmentIndex) + ".ts"
-
-				file, err := os.Create(fileName)
-				if err != nil {
-					return result{"", fmt.Errorf("cannot create file for ts-data: %w", err)}
-				}
-
-				io.Copy(file, resp.Body)
-				_ = file.Close()
-
-				return result{fileName, nil}
-			}
-
-			select {
-			case tasks <- task:
-			case <-stopLoading:
-				return
-			}
 		}
 	})
 
@@ -125,6 +134,7 @@ func DownloadTSFilesToDir(logger util.Logger, dirName string, expectedName strin
 }
 
 type result struct {
-	fileName string
-	err      error
+	segmentIndex int
+	fileName     string
+	err          error
 }
