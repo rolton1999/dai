@@ -53,10 +53,10 @@ func DownloadTSFilesToDir(logger util.Logger, dirName string, expectedName strin
 
 	tmpFilePrefix := filepath.Join(dirName, expectedName)
 
-	parLoader := newParLoader[result]()
-	tasks := make(chan taskType[result], 10)
+	workerPool := util.NewWorkerPool[result]()
+	tasks := make(chan util.TaskType[result], 10)
 
-	resultCh := parLoader.start(10, tasks)
+	resultCh := workerPool.Start(10, tasks)
 	stopLoading := make(chan struct{})
 
 	howMany := (len(split) - 6 + 1) / 2 // see comment before the func
@@ -115,7 +115,7 @@ func DownloadTSFilesToDir(logger util.Logger, dirName string, expectedName strin
 	})
 
 	wg.Wait()
-	parLoader.stop()
+	workerPool.Stop()
 
 	if err != nil {
 		return nil, err
