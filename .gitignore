@@ -5,5 +5,5 @@
 *.mp4
 ./tmp
 .concat.txt
-./bin/*
+./bin
 
