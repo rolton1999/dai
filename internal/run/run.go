@@ -1,7 +1,7 @@
 package run
 
 import (
-	"dai/internal/download"
+	"dai/internal/usecase"
 	"dai/internal/util"
 	"fmt"
 	"os"
@@ -34,7 +34,7 @@ func Run() error {
 			return err
 		}
 
-		return download.DownloadSingleVideo(logger, videoID)
+		return usecase.DownloadSingleVideo(logger, videoID)
 
 	case playlist:
 		playlistID, err := getPlaylistIDFromArgURL(url)
@@ -42,7 +42,7 @@ func Run() error {
 			return err
 		}
 
-		return download.DownloadPlaylist(logger, playlistID)
+		return usecase.DownloadPlaylist(logger, playlistID)
 
 	case notExpected:
 		return notExpectedContentLink

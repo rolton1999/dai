@@ -1,4 +1,4 @@
-package download
+package usecase
 
 import (
 	"dai/internal/ffmpeg"
