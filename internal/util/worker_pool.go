@@ -3,7 +3,7 @@ package util
 type TaskType[TResult any] = func() TResult
 
 type WorkerPool[TResult any] interface {
-	Start(workers int) <-chan TResult
+	Start(workers int) <-chan any
 	Submit(task TaskType[TResult])
 	DrainAndStop()
 	Stop()
@@ -30,9 +30,9 @@ func (wp *workerPoolImpl[TResult]) Submit(task TaskType[TResult]) {
 	}
 }
 
-func (wp *workerPoolImpl[TResult]) Start(workers int) <-chan TResult {
+func (wp *workerPoolImpl[TResult]) Start(workers int) <-chan any {
 	allDone := make(chan struct{})
-	resultCh := make(chan TResult)
+	resultCh := make(chan any)
 
 	for range workers {
 		go func() {

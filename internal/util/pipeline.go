@@ -3,37 +3,48 @@ package util
 import "sync"
 
 type PipelineStage interface {
-	Run(inputCh <-chan any, stopCh chan struct{})
-	GetOutputCh() <-chan any
+	Run(inputCh <-chan any, stopCh chan struct{}) <-chan any
 }
 
-func NewPipelineStage[TInput, TOutput any](processFunc func(TInput) TOutput) PipelineStage {
+func NewPipelineStage[TInput, TOutput any](queueSize int, workerCount int, processFunc func(TInput) (TOutput, bool)) PipelineStage {
 	return &pipelineStageImpl[TInput, TOutput]{
 		processFunc: processFunc,
+		workerPool:  NewWorkerPool[TOutput](queueSize),
 		outputCh:    make(chan any),
 	}
 }
 
 type pipelineStageImpl[TInput, TOutput any] struct {
-	processFunc func(TInput) TOutput
+	workerPool  WorkerPool[TOutput]
+	workers     int
+	processFunc func(TInput) (TOutput, bool)
 	outputCh    chan any
 }
 
-func (s *pipelineStageImpl[TInput, TOutput]) Run(inputCh <-chan any, stopCh chan struct{}) {
-	defer close(s.outputCh)
-	for {
-		select {
-		case <-stopCh:
-			return
-		case input := <-inputCh:
-			res := s.processFunc(input.(TInput))
-			select {
-			case <-stopCh:
-				return
-			case s.outputCh <- res:
-			}
-		}
-	}
+func (s *pipelineStageImpl[TInput, TOutput]) Run(inputCh <-chan any, stopCh chan struct{}) <-chan any {
+	defer s.workerPool.DrainAndStop()
+	outputCh := s.workerPool.Start(s.workers)
+
+	// go func() {
+	// 	for {
+	// 		select {
+	// 		case <-stopCh:
+	// 			return
+	// 		case inputI, ok := <-inputCh:
+	// 			if !ok {
+	// 				return
+	// 			}
+	// 			input := inputI.(TInput)
+	// 			task := func() TOutput {
+	// 				return s.processFunc(input)
+	// 			}
+	// 			task := input.(TaskType[TOutput])
+	// 			s.workerPool.Submit(task)
+	// 		}
+	// 	}
+	// }()
+
+	return outputCh
 }
 
 func (s *pipelineStageImpl[TInput, TOutput]) GetOutputCh() <-chan any {
@@ -67,11 +78,7 @@ func (p *pipelineImpl) Run() {
 	var inputCh <-chan any
 	stopCh := make(chan struct{})
 	for _, stage := range p.stages {
-		nextInputCh := stage.GetOutputCh()
-		wg.Go(func() {
-			stage.Run(inputCh, stopCh)
-		})
-		inputCh = nextInputCh
+		inputCh = stage.Run(inputCh, stopCh)
 	}
 	wg.Wait()
 	close(stopCh)

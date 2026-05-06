@@ -39,16 +39,24 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 
 	wg := sync.WaitGroup{}
 
-	produceState := util.NewPipelineStage(func(_ struct{}) util.TaskType[segmentLoadMeta] {
-		i := 0
-		getNext := func() util.TaskType[segmentLoadMeta] {
-			task := getLoadTaskFromMeta(segmentMetas[i])
-			i += 1
-			return task
-		}
-		return getNext()
-	})
-	_ = produceState
+	// produceState := util.NewPipelineStage(func(_ struct{}) (util.TaskType[segmentLoadMeta], bool) {
+	// 	i := 0
+	// 	getNext := func() (util.TaskType[segmentLoadMeta], bool) {
+	// 		if i == len(segmentMetas) {
+	// 			return nil, true
+	// 		}
+	// 		task := getLoadTaskFromMeta(segmentMetas[i])
+	// 		i += 1
+	// 		return task, false
+	// 	}
+	// 	return getNext()
+	// })
+	// _ = produceState
+	// loadStage := util.NewPipelineStage(func(task util.TaskType[segmentLoadMeta]) (struct{}, bool) {
+	// 	workerPool.Submit(task)
+	// 	return struct{}{}, false
+	// })
+	// _ = loadStage
 	//produceStage :=
 	//loadStage :=
 	//consumeStage :=
@@ -74,10 +82,11 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 		defer stopPipeline.Store(true)
 
 		for i := 1; ; i++ {
-			result, ok := <-resultCh
+			resultI, ok := <-resultCh
 			if !ok {
 				return
 			}
+			result := resultI.(segmentLoadMeta)
 			if result.err != nil {
 				err = result.err
 				return
