@@ -30,39 +30,38 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 		workers             = 10
 	)
 
-	workerPool := util.NewWorkerPool[result](workerPoolQueueSize)
-
+	workerPool := util.NewWorkerPool[segmentLoadMeta](workerPoolQueueSize)
 	resultCh := workerPool.Start(workers)
-	var stopLoading atomic.Bool
+
+	var stopPipeline atomic.Bool
 
 	listOfFiles := make([]string, len(segmentMetas))
 
 	wg := sync.WaitGroup{}
+
+	produceState := util.NewPipelineStage(func(_ struct{}) util.TaskType[segmentLoadMeta] {
+		i := 0
+		getNext := func() util.TaskType[segmentLoadMeta] {
+			task := getLoadTaskFromMeta(segmentMetas[i])
+			i += 1
+			return task
+		}
+		return getNext()
+	})
+	_ = produceState
+	//produceStage :=
+	//loadStage :=
+	//consumeStage :=
 
 	// producer
 	wg.Go(func() {
 		defer workerPool.DrainAndStop()
 
 		for _, taskMeta := range segmentMetas {
-			task := func() result {
-				resp, err := http.Get(taskMeta.link)
-				if err != nil {
-					return result{0, "", fmt.Errorf("cannot get first segment link: %w", err)}
-				}
-
-				file, err := os.Create(taskMeta.fileName)
-				if err != nil {
-					return result{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}
-				}
-
-				io.Copy(file, resp.Body)
-				_ = file.Close()
-
-				return result{taskMeta.index, taskMeta.fileName, nil}
-			}
+			task := getLoadTaskFromMeta(taskMeta)
 
 			// in case of any error in forward pipeline steps
-			if stopLoading.Load() {
+			if stopPipeline.Load() {
 				return
 			}
 
@@ -72,7 +71,7 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 
 	// consumer
 	wg.Go(func() {
-		defer stopLoading.Store(true)
+		defer stopPipeline.Store(true)
 
 		for i := 1; ; i++ {
 			result, ok := <-resultCh
@@ -84,7 +83,7 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 				return
 			}
 			listOfFiles[result.segmentIndex] = result.fileName
-			logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*i/len(segmentMetas)))
+			logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*i/len(listOfFiles)))
 		}
 	})
 
@@ -98,7 +97,7 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 	return listOfFiles, nil
 }
 
-type result struct {
+type segmentLoadMeta struct {
 	segmentIndex int
 	fileName     string
 	err          error
@@ -108,6 +107,25 @@ type segmentMeta struct {
 	index    int
 	link     string
 	fileName string
+}
+
+func getLoadTaskFromMeta(taskMeta segmentMeta) util.TaskType[segmentLoadMeta] {
+	return func() segmentLoadMeta {
+		resp, err := http.Get(taskMeta.link)
+		if err != nil {
+			return segmentLoadMeta{0, "", fmt.Errorf("cannot get first segment link: %w", err)}
+		}
+
+		file, err := os.Create(taskMeta.fileName)
+		if err != nil {
+			return segmentLoadMeta{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}
+		}
+
+		io.Copy(file, resp.Body)
+		_ = file.Close()
+
+		return segmentLoadMeta{taskMeta.index, taskMeta.fileName, nil}
+	}
 }
 
 /*
