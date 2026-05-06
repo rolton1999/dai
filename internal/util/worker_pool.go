@@ -36,7 +36,9 @@ func (wp *workerPoolImpl[TResult]) Start(workers int) <-chan any {
 
 	for range workers {
 		go func() {
-			defer func() { allDone <- struct{}{} }()
+			defer func() {
+				allDone <- struct{}{}
+			}()
 
 			for {
 				select {

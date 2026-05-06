@@ -17,21 +17,23 @@ func NewPipelineStage[TInput, TOutput any](queueSize int, workerCount int, proce
 		processFunc: processFunc,
 		workerPool:  NewWorkerPool[TOutput](queueSize),
 		queueSize:   queueSize,
+		workerCount: workerCount,
 	}
 }
 
 type pipelineStageImpl[TInput, TOutput any] struct {
 	workerPool  WorkerPool[TOutput]
 	queueSize   int
-	workers     int
+	workerCount int
+
 	processFunc func(TInput) (TOutput, bool)
 }
 
 func (s *pipelineStageImpl[TInput, TOutput]) Run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any {
 	if role == producer {
 		outputCh := make(chan any, s.queueSize)
-		defer close(outputCh)
 		go func() {
+			defer close(outputCh)
 			for {
 				var dummyInput TInput
 				out, done := s.processFunc(dummyInput)
@@ -71,10 +73,10 @@ func (s *pipelineStageImpl[TInput, TOutput]) Run(inputCh <-chan any, stopCh chan
 		return outputCh
 	}
 
-	defer s.workerPool.DrainAndStop()
-	outputCh := s.workerPool.Start(s.workers)
+	outputCh := s.workerPool.Start(s.workerCount)
 
 	go func() {
+		defer s.workerPool.DrainAndStop()
 		for {
 			select {
 			case <-stopCh:
@@ -132,6 +134,9 @@ func (p *pipelineImpl) Run() {
 		}
 		inputCh = stage.Run(inputCh, stopCh, role)
 	}
+
+	// finalizer should simply close this ch
+	<-inputCh
 
 	close(stopCh)
 }

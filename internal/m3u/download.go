@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 )
 
 func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPlaylist) ([]string, error) {
@@ -26,78 +24,112 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 	}
 
 	const (
-		workerPoolQueueSize = 10
-		workers             = 10
+		loaderQueueSize = 10
+		loaderWorkers   = 10
 	)
 
-	workerPool := util.NewWorkerPool[segmentLoadMeta](workerPoolQueueSize)
-	resultCh := workerPool.Start(workers)
+	// workerPool := util.NewWorkerPool[segmentLoadMeta](loaderQueueSize)
+	// resultCh := workerPool.Start(loaderWorkers)
 
-	var stopPipeline atomic.Bool
+	// var stopPipeline atomic.Bool
+	//wg := sync.WaitGroup{}
 
 	listOfFiles := make([]string, len(segmentMetas))
 
-	wg := sync.WaitGroup{}
+	segmentMetaProducedIdx := 0
+	produceStage := util.NewPipelineStage(1, 1, func(_ struct{}) (segmentMeta, bool) {
+		getNext := func() (segmentMeta, bool) {
+			if segmentMetaProducedIdx == len(segmentMetas) {
+				return segmentMeta{}, true
+			}
 
-	// produceState := util.NewPipelineStage(func(_ struct{}) (util.TaskType[segmentLoadMeta], bool) {
-	// 	i := 0
-	// 	getNext := func() (util.TaskType[segmentLoadMeta], bool) {
-	// 		if i == len(segmentMetas) {
-	// 			return nil, true
+			meta := segmentMetas[segmentMetaProducedIdx]
+			segmentMetaProducedIdx += 1
+			return meta, false
+		}
+		return getNext()
+	})
+
+	_ = produceStage
+	loadStage := util.NewPipelineStage(loaderQueueSize, loaderWorkers, func(meta segmentMeta) (segmentLoadMeta, bool) {
+		resp, err := http.Get(meta.link)
+		if err != nil {
+			return segmentLoadMeta{0, "", fmt.Errorf("cannot get first segment link: %w", err)}, true
+		}
+
+		file, err := os.Create(meta.fileName)
+		if err != nil {
+			return segmentLoadMeta{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}, true
+		}
+
+		io.Copy(file, resp.Body)
+		_ = file.Close()
+
+		return segmentLoadMeta{meta.index, meta.fileName, nil}, false
+	})
+
+	_ = loadStage
+	loadMetaConsumedIdx := 0
+	consumeStage := util.NewPipelineStage(1, 1, func(meta segmentLoadMeta) (struct{}, bool) {
+		process := func(meta segmentLoadMeta) (struct{}, bool) {
+			if meta.err != nil {
+				err = meta.err
+				return struct{}{}, false
+			}
+
+			listOfFiles[meta.segmentIndex] = meta.fileName
+			logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*loadMetaConsumedIdx/len(listOfFiles)))
+
+			loadMetaConsumedIdx += 1
+			return struct{}{}, false
+		}
+
+		return process(meta)
+	})
+	_ = consumeStage
+	pipeline := util.NewPipeline()
+	pipeline.AppendStage(produceStage)
+	pipeline.AppendStage(loadStage)
+	pipeline.AppendStage(consumeStage)
+	pipeline.Run()
+
+	// // producer
+	// wg.Go(func() {
+	// 	defer workerPool.DrainAndStop()
+
+	// 	for _, taskMeta := range segmentMetas {
+	// 		task := getLoadTaskFromMeta(taskMeta)
+
+	// 		// in case of any error in forward pipeline steps
+	// 		if stopPipeline.Load() {
+	// 			return
 	// 		}
-	// 		task := getLoadTaskFromMeta(segmentMetas[i])
-	// 		i += 1
-	// 		return task, false
+
+	// 		workerPool.Submit(task)
 	// 	}
-	// 	return getNext()
 	// })
-	// _ = produceState
-	// loadStage := util.NewPipelineStage(func(task util.TaskType[segmentLoadMeta]) (struct{}, bool) {
-	// 	workerPool.Submit(task)
-	// 	return struct{}{}, false
+
+	// // consumer
+	// wg.Go(func() {
+	// 	defer stopPipeline.Store(true)
+
+	// 	for i := 1; ; i++ {
+	// 		resultI, ok := <-resultCh
+	// 		if !ok {
+	// 			return
+	// 		}
+	// 		result := resultI.(segmentLoadMeta)
+	// 		if result.err != nil {
+	// 			err = result.err
+	// 			return
+	// 		}
+	// 		listOfFiles[result.segmentIndex] = result.fileName
+	// 		logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*i/len(listOfFiles)))
+	// 	}
 	// })
-	// _ = loadStage
-	//produceStage :=
-	//loadStage :=
-	//consumeStage :=
 
-	// producer
-	wg.Go(func() {
-		defer workerPool.DrainAndStop()
-
-		for _, taskMeta := range segmentMetas {
-			task := getLoadTaskFromMeta(taskMeta)
-
-			// in case of any error in forward pipeline steps
-			if stopPipeline.Load() {
-				return
-			}
-
-			workerPool.Submit(task)
-		}
-	})
-
-	// consumer
-	wg.Go(func() {
-		defer stopPipeline.Store(true)
-
-		for i := 1; ; i++ {
-			resultI, ok := <-resultCh
-			if !ok {
-				return
-			}
-			result := resultI.(segmentLoadMeta)
-			if result.err != nil {
-				err = result.err
-				return
-			}
-			listOfFiles[result.segmentIndex] = result.fileName
-			logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*i/len(listOfFiles)))
-		}
-	})
-
-	wg.Wait()
-	workerPool.Stop()
+	// wg.Wait()
+	// workerPool.Stop()
 
 	if err != nil {
 		return nil, err
