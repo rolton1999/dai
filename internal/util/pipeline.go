@@ -1,9 +1,15 @@
 package util
 
-import "sync"
+type stageRole int
+
+const (
+	producer = iota
+	medium
+	finalizer
+)
 
 type PipelineStage interface {
-	Run(inputCh <-chan any, stopCh chan struct{}, asProducer bool) <-chan any
+	Run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any
 }
 
 func NewPipelineStage[TInput, TOutput any](queueSize int, workerCount int, processFunc func(TInput) (TOutput, bool)) PipelineStage {
@@ -21,8 +27,8 @@ type pipelineStageImpl[TInput, TOutput any] struct {
 	processFunc func(TInput) (TOutput, bool)
 }
 
-func (s *pipelineStageImpl[TInput, TOutput]) Run(inputCh <-chan any, stopCh chan struct{}, asProducer bool) <-chan any {
-	if asProducer {
+func (s *pipelineStageImpl[TInput, TOutput]) Run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any {
+	if role == producer {
 		outputCh := make(chan any, s.queueSize)
 		defer close(outputCh)
 		go func() {
@@ -37,6 +43,27 @@ func (s *pipelineStageImpl[TInput, TOutput]) Run(inputCh <-chan any, stopCh chan
 				case <-stopCh:
 					return
 				case outputCh <- out:
+				}
+			}
+		}()
+
+		return outputCh
+	}
+
+	if role == finalizer {
+		outputCh := make(chan any, s.queueSize)
+		go func() {
+			defer close(outputCh)
+			for {
+				select {
+				case <-stopCh:
+					return
+				case inputI, ok := <-inputCh:
+					if !ok {
+						return
+					}
+					input := inputI.(TInput)
+					s.processFunc(input)
 				}
 			}
 		}()
@@ -88,19 +115,23 @@ func (p *pipelineImpl) AppendStage(stage PipelineStage) {
 
 func (p *pipelineImpl) Run() {
 	if len(p.stages) == 0 {
-		return
+		panic("cannot do pipeline without any stages")
 	}
 	if len(p.stages) == 1 {
 		panic("cannot do pipeline with only producer without consumers")
 	}
 
-	wg := sync.WaitGroup{}
-
 	var inputCh <-chan any
 	stopCh := make(chan struct{})
 	for i, stage := range p.stages {
-		inputCh = stage.Run(inputCh, stopCh, i == 0 /*producer mode*/)
+		var role stageRole = medium
+		if i == 0 {
+			role = producer
+		} else if i == len(p.stages)-1 {
+			role = finalizer
+		}
+		inputCh = stage.Run(inputCh, stopCh, role)
 	}
-	wg.Wait()
+
 	close(stopCh)
 }
