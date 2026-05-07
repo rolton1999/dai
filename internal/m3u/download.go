@@ -28,12 +28,6 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 		loaderWorkers   = 10
 	)
 
-	// workerPool := util.NewWorkerPool[segmentLoadMeta](loaderQueueSize)
-	// resultCh := workerPool.Start(loaderWorkers)
-
-	// var stopPipeline atomic.Bool
-	//wg := sync.WaitGroup{}
-
 	listOfFiles := make([]string, len(segmentMetas))
 
 	segmentMetaProducedIdx := 0
@@ -50,7 +44,6 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 		return getNext()
 	})
 
-	_ = produceStage
 	loadStage := util.NewPipelineStage(loaderQueueSize, loaderWorkers, func(meta segmentMeta) (segmentLoadMeta, bool) {
 		resp, err := http.Get(meta.link)
 		if err != nil {
@@ -68,7 +61,6 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 		return segmentLoadMeta{meta.index, meta.fileName, nil}, false
 	})
 
-	_ = loadStage
 	loadMetaConsumedIdx := 0
 	consumeStage := util.NewPipelineStage(1, 1, func(meta segmentLoadMeta) (struct{}, bool) {
 		process := func(meta segmentLoadMeta) (struct{}, bool) {
@@ -86,50 +78,12 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 
 		return process(meta)
 	})
-	_ = consumeStage
+
 	pipeline := util.NewPipeline()
 	pipeline.AppendStage(produceStage)
 	pipeline.AppendStage(loadStage)
 	pipeline.AppendStage(consumeStage)
 	pipeline.Run()
-
-	// // producer
-	// wg.Go(func() {
-	// 	defer workerPool.DrainAndStop()
-
-	// 	for _, taskMeta := range segmentMetas {
-	// 		task := getLoadTaskFromMeta(taskMeta)
-
-	// 		// in case of any error in forward pipeline steps
-	// 		if stopPipeline.Load() {
-	// 			return
-	// 		}
-
-	// 		workerPool.Submit(task)
-	// 	}
-	// })
-
-	// // consumer
-	// wg.Go(func() {
-	// 	defer stopPipeline.Store(true)
-
-	// 	for i := 1; ; i++ {
-	// 		resultI, ok := <-resultCh
-	// 		if !ok {
-	// 			return
-	// 		}
-	// 		result := resultI.(segmentLoadMeta)
-	// 		if result.err != nil {
-	// 			err = result.err
-	// 			return
-	// 		}
-	// 		listOfFiles[result.segmentIndex] = result.fileName
-	// 		logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*i/len(listOfFiles)))
-	// 	}
-	// })
-
-	// wg.Wait()
-	// workerPool.Stop()
 
 	if err != nil {
 		return nil, err

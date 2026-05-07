@@ -16,14 +16,16 @@ func SpinningMessage(logger Logger, message string, after string) func() {
 			close(done)
 		}()
 
+		const tickTime = 200 * time.Millisecond
+		ticker := time.NewTicker(tickTime)
+
 		for frameI := 0; ; frameI = (frameI + 1) % len(frames) {
 			select {
 			case <-stop:
 				return
-			default:
+			case <-ticker.C:
 			}
 			logger.UpdateWithSuffix(fmt.Sprintf("%s %s", message, frames[frameI]))
-			time.Sleep(200 * time.Millisecond)
 		}
 	}()
 
