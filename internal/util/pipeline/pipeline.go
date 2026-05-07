@@ -50,50 +50,29 @@ type stageImpl[TInput, TOutput any] struct {
 	processFunc func(TInput) (TOutput, bool)
 }
 
-func (s *stageImpl[TInput, TOutput]) run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any {
-	if role == producer {
-		outputCh := make(chan any, s.queueSize)
-		go func() {
-			defer close(outputCh)
-			for {
-				var dummyInput TInput
-				out, done := s.processFunc(dummyInput)
-				if done {
-					return
-				}
-
-				select {
-				case <-stopCh:
-					return
-				case outputCh <- out:
-				}
+func (s *stageImpl[TInput, TOutput]) runAsProcucer(stopCh chan struct{}) <-chan any {
+	outputCh := make(chan any, s.queueSize)
+	go func() {
+		defer close(outputCh)
+		for {
+			var dummyInput TInput
+			out, done := s.processFunc(dummyInput)
+			if done {
+				return
 			}
-		}()
 
-		return outputCh
-	}
-
-	if role == finalizer {
-		outputCh := make(chan any, s.queueSize)
-		go func() {
-			defer close(outputCh)
-			for {
-				select {
-				case <-stopCh:
-					return
-				case inputI, ok := <-inputCh:
-					if !ok {
-						return
-					}
-					input := inputI.(TInput)
-					s.processFunc(input)
-				}
+			select {
+			case <-stopCh:
+				return
+			case outputCh <- out:
 			}
-		}()
+		}
+	}()
 
-		return outputCh
-	}
+	return outputCh
+}
 
+func (s *stageImpl[TInput, TOutput]) runAsMedium(inputCh <-chan any, stopCh chan struct{}) <-chan any {
 	outputCh := s.workerPool.Start(s.workerCount)
 
 	go func() {
@@ -117,6 +96,37 @@ func (s *stageImpl[TInput, TOutput]) run(inputCh <-chan any, stopCh chan struct{
 	}()
 
 	return outputCh
+}
+func (s *stageImpl[TInput, TOutput]) runAsFinalizer(inputCh <-chan any, stopCh chan struct{}) <-chan any {
+	outputCh := make(chan any, s.queueSize)
+	go func() {
+		defer close(outputCh)
+		for {
+			select {
+			case <-stopCh:
+				return
+			case inputI, ok := <-inputCh:
+				if !ok {
+					return
+				}
+				input := inputI.(TInput)
+				s.processFunc(input)
+			}
+		}
+	}()
+
+	return outputCh
+}
+func (s *stageImpl[TInput, TOutput]) run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any {
+	switch role {
+	case producer:
+		return s.runAsProcucer(stopCh)
+	case medium:
+		return s.runAsMedium(inputCh, stopCh)
+	case finalizer:
+		return s.runAsFinalizer(inputCh, stopCh)
+	}
+	panic("unknown stage")
 }
 
 type Pipeline interface {
