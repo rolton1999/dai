@@ -3,6 +3,7 @@ package m3u
 import (
 	"bytes"
 	"dai/internal/util"
+	"dai/internal/util/pipeline"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,63 +24,11 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 		return nil, fmt.Errorf("cannot parse master playlist: %w", err)
 	}
 
-	const (
-		loaderQueueSize = 10
-		loaderWorkers   = 10
-	)
+	produceStage := getProduceStage(segmentMetas)
+	loadStage := getLoadStage()
+	consumeStage, listOfFiles := getConsumeStage(logger, len(segmentMetas), &err)
 
-	listOfFiles := make([]string, len(segmentMetas))
-
-	segmentMetaProducedIdx := 0
-	produceStage := util.NewPipelineStage(1, 1, func(_ struct{}) (segmentMeta, bool) {
-		getNext := func() (segmentMeta, bool) {
-			if segmentMetaProducedIdx == len(segmentMetas) {
-				return segmentMeta{}, true
-			}
-
-			meta := segmentMetas[segmentMetaProducedIdx]
-			segmentMetaProducedIdx += 1
-			return meta, false
-		}
-		return getNext()
-	})
-
-	loadStage := util.NewPipelineStage(loaderQueueSize, loaderWorkers, func(meta segmentMeta) (segmentLoadMeta, bool) {
-		resp, err := http.Get(meta.link)
-		if err != nil {
-			return segmentLoadMeta{0, "", fmt.Errorf("cannot get first segment link: %w", err)}, true
-		}
-
-		file, err := os.Create(meta.fileName)
-		if err != nil {
-			return segmentLoadMeta{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}, true
-		}
-
-		io.Copy(file, resp.Body)
-		_ = file.Close()
-
-		return segmentLoadMeta{meta.index, meta.fileName, nil}, false
-	})
-
-	loadMetaConsumedIdx := 0
-	consumeStage := util.NewPipelineStage(1, 1, func(meta segmentLoadMeta) (struct{}, bool) {
-		process := func(meta segmentLoadMeta) (struct{}, bool) {
-			if meta.err != nil {
-				err = meta.err
-				return struct{}{}, false
-			}
-
-			listOfFiles[meta.segmentIndex] = meta.fileName
-			logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*loadMetaConsumedIdx/len(listOfFiles)))
-
-			loadMetaConsumedIdx += 1
-			return struct{}{}, false
-		}
-
-		return process(meta)
-	})
-
-	pipeline := util.NewPipeline()
+	pipeline := pipeline.NewPipeline()
 	pipeline.AppendStage(produceStage)
 	pipeline.AppendStage(loadStage)
 	pipeline.AppendStage(consumeStage)
@@ -104,23 +53,65 @@ type segmentMeta struct {
 	fileName string
 }
 
-func getLoadTaskFromMeta(taskMeta segmentMeta) util.TaskType[segmentLoadMeta] {
-	return func() segmentLoadMeta {
-		resp, err := http.Get(taskMeta.link)
+func getProduceStage(segmentMetas []segmentMeta) pipeline.Stage {
+	segmentMetaProducedIdx := 0
+	return pipeline.NewStage(1, 1, func(_ struct{}) (segmentMeta, bool) {
+		getNext := func() (segmentMeta, bool) {
+			if segmentMetaProducedIdx == len(segmentMetas) {
+				return segmentMeta{}, true
+			}
+
+			meta := segmentMetas[segmentMetaProducedIdx]
+			segmentMetaProducedIdx += 1
+			return meta, false
+		}
+		return getNext()
+	})
+}
+
+func getLoadStage() pipeline.Stage {
+	const (
+		loaderQueueSize = 10
+		loaderWorkers   = 10
+	)
+
+	return pipeline.NewStage(loaderQueueSize, loaderWorkers, func(meta segmentMeta) (segmentLoadMeta, bool) {
+		resp, err := http.Get(meta.link)
 		if err != nil {
-			return segmentLoadMeta{0, "", fmt.Errorf("cannot get first segment link: %w", err)}
+			return segmentLoadMeta{0, "", fmt.Errorf("cannot get first segment link: %w", err)}, true
 		}
 
-		file, err := os.Create(taskMeta.fileName)
+		file, err := os.Create(meta.fileName)
 		if err != nil {
-			return segmentLoadMeta{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}
+			return segmentLoadMeta{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}, true
 		}
 
 		io.Copy(file, resp.Body)
 		_ = file.Close()
 
-		return segmentLoadMeta{taskMeta.index, taskMeta.fileName, nil}
-	}
+		return segmentLoadMeta{meta.index, meta.fileName, nil}, false
+	})
+}
+
+func getConsumeStage(logger util.Logger, howMany int, err *error) (pipeline.Stage, []string) {
+	loadMetaConsumedIdx := 0
+	listOfFiles := make([]string, howMany)
+	return pipeline.NewStage(1, 1, func(meta segmentLoadMeta) (struct{}, bool) {
+		process := func(meta segmentLoadMeta) (struct{}, bool) {
+			if meta.err != nil {
+				*err = meta.err
+				return struct{}{}, false
+			}
+
+			listOfFiles[meta.segmentIndex] = meta.fileName
+			logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*loadMetaConsumedIdx/len(listOfFiles)))
+
+			loadMetaConsumedIdx += 1
+			return struct{}{}, false
+		}
+
+		return process(meta)
+	}), listOfFiles
 }
 
 /*

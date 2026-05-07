@@ -1,4 +1,4 @@
-package util
+package pipeline
 
 type TaskType[TResult any] = func() TResult
 

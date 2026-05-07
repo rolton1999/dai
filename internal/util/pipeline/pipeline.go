@@ -1,4 +1,4 @@
-package util
+package pipeline
 
 type stageRole int
 
@@ -8,12 +8,12 @@ const (
 	finalizer
 )
 
-type PipelineStage interface {
+type Stage interface {
 	Run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any
 }
 
-func NewPipelineStage[TInput, TOutput any](queueSize int, workerCount int, processFunc func(TInput) (TOutput, bool)) PipelineStage {
-	return &pipelineStageImpl[TInput, TOutput]{
+func NewStage[TInput, TOutput any](queueSize int, workerCount int, processFunc func(TInput) (TOutput, bool)) Stage {
+	return &stageImpl[TInput, TOutput]{
 		processFunc: processFunc,
 		workerPool:  NewWorkerPool[TOutput](queueSize),
 		queueSize:   queueSize,
@@ -21,7 +21,7 @@ func NewPipelineStage[TInput, TOutput any](queueSize int, workerCount int, proce
 	}
 }
 
-type pipelineStageImpl[TInput, TOutput any] struct {
+type stageImpl[TInput, TOutput any] struct {
 	workerPool  WorkerPool[TOutput]
 	queueSize   int
 	workerCount int
@@ -29,7 +29,7 @@ type pipelineStageImpl[TInput, TOutput any] struct {
 	processFunc func(TInput) (TOutput, bool)
 }
 
-func (s *pipelineStageImpl[TInput, TOutput]) Run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any {
+func (s *stageImpl[TInput, TOutput]) Run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any {
 	if role == producer {
 		outputCh := make(chan any, s.queueSize)
 		go func() {
@@ -99,7 +99,7 @@ func (s *pipelineStageImpl[TInput, TOutput]) Run(inputCh <-chan any, stopCh chan
 }
 
 type Pipeline interface {
-	AppendStage(stage PipelineStage)
+	AppendStage(stage Stage)
 	Run()
 }
 
@@ -108,10 +108,10 @@ func NewPipeline() Pipeline {
 }
 
 type pipelineImpl struct {
-	stages []PipelineStage
+	stages []Stage
 }
 
-func (p *pipelineImpl) AppendStage(stage PipelineStage) {
+func (p *pipelineImpl) AppendStage(stage Stage) {
 	p.stages = append(p.stages, stage)
 }
 
