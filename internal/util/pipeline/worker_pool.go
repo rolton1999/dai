@@ -5,6 +5,7 @@ type TaskType[TResult any] = func() TResult
 type WorkerPool[TResult any] interface {
 	Start(workers int) <-chan any
 	Submit(task TaskType[TResult])
+	GetSubmitCh() chan<- TaskType[TResult]
 	DrainAndStop()
 	Stop()
 }
@@ -28,6 +29,10 @@ func (wp *workerPoolImpl[TResult]) Submit(task TaskType[TResult]) {
 	case wp.tasks <- task:
 	case <-wp.stopCh:
 	}
+}
+
+func (wp *workerPoolImpl[TResult]) GetSubmitCh() chan<- TaskType[TResult] {
+	return wp.tasks
 }
 
 func (wp *workerPoolImpl[TResult]) Start(workers int) <-chan any {

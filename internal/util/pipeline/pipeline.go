@@ -50,12 +50,13 @@ type stageImpl[TInput, TOutput any] struct {
 	processFunc func(TInput) (TOutput, bool)
 }
 
+// how to stop producers?
 func (s *stageImpl[TInput, TOutput]) runAsProcucer(stopCh chan struct{}) <-chan any {
 	outputCh := make(chan any, s.queueSize)
 	go func() {
 		defer close(outputCh)
+		var dummyInput TInput
 		for {
-			var dummyInput TInput
 			out, done := s.processFunc(dummyInput)
 			if done {
 				return
@@ -77,6 +78,7 @@ func (s *stageImpl[TInput, TOutput]) runAsMedium(inputCh <-chan any, stopCh chan
 
 	go func() {
 		defer s.workerPool.DrainAndStop()
+		submitCh := s.workerPool.GetSubmitCh()
 		for {
 			select {
 			case <-stopCh:
@@ -90,7 +92,12 @@ func (s *stageImpl[TInput, TOutput]) runAsMedium(inputCh <-chan any, stopCh chan
 					out, _ := s.processFunc(input)
 					return out
 				}
-				s.workerPool.Submit(task)
+				select {
+				case <-stopCh:
+					return
+				case submitCh <- task:
+				}
+				// s.workerPool.Submit(task)
 			}
 		}
 	}()
