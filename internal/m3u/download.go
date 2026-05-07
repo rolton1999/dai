@@ -75,21 +75,21 @@ func getLoadStage() pipeline.Stage {
 		loaderWorkers   = 10
 	)
 
-	return pipeline.NewStage(loaderQueueSize, loaderWorkers, func(meta segmentMeta) (segmentLoadMeta, bool) {
+	return pipeline.NewStage(loaderQueueSize, loaderWorkers, func(meta segmentMeta) segmentLoadMeta {
 		resp, err := http.Get(meta.link)
 		if err != nil {
-			return segmentLoadMeta{0, "", fmt.Errorf("cannot get first segment link: %w", err)}, true
+			return segmentLoadMeta{0, "", fmt.Errorf("cannot get first segment link: %w", err)}
 		}
 
 		file, err := os.Create(meta.fileName)
 		if err != nil {
-			return segmentLoadMeta{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}, true
+			return segmentLoadMeta{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}
 		}
 
 		io.Copy(file, resp.Body)
 		_ = file.Close()
 
-		return segmentLoadMeta{meta.index, meta.fileName, nil}, false
+		return segmentLoadMeta{meta.index, meta.fileName, nil}
 	})
 }
 

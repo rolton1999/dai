@@ -56,8 +56,9 @@ func (wp *workerPoolImpl[TResult]) Start(workers int) <-chan any {
 					if task == nil {
 						continue
 					}
+					out := task()
 					select {
-					case resultCh <- task():
+					case resultCh <- out:
 					case <-wp.stopCh:
 					}
 				}

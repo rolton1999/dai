@@ -12,9 +12,9 @@ type Stage interface {
 	run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any
 }
 
-func NewStage[TInput, TOutput any](queueSize int, workerCount int, processFunc func(TInput) (TOutput, bool)) Stage {
+func NewStage[TInput, TOutput any](queueSize int, workerCount int, processFunc func(TInput) TOutput) Stage {
 	return &stageImpl[TInput, TOutput]{
-		processFunc: processFunc,
+		processFunc: func(input TInput) (TOutput, bool) { return processFunc(input), true },
 		workerPool:  NewWorkerPool[TOutput](queueSize),
 		queueSize:   queueSize,
 		workerCount: workerCount,
@@ -53,20 +53,36 @@ type stageImpl[TInput, TOutput any] struct {
 // how to stop producers?
 func (s *stageImpl[TInput, TOutput]) runAsProcucer(stopCh chan struct{}) <-chan any {
 	outputCh := make(chan any, s.queueSize)
+	// outputCh := s.workerPool.Start(s.workerCount)
 	go func() {
+		// defer s.workerPool.DrainAndStop()
+		// submitCh := s.workerPool.GetSubmitCh()
 		defer close(outputCh)
 		var dummyInput TInput
+
 		for {
 			out, done := s.processFunc(dummyInput)
 			if done {
 				return
 			}
-
 			select {
 			case <-stopCh:
 				return
 			case outputCh <- out:
 			}
+			// task := func() TOutput {
+			// 	out, done := s.processFunc(dummyInput)
+			// 	if done {
+			// 		produceDone.Store(true)
+			// 	}
+			// 	return out
+			// }
+
+			// select {
+			// case <-stopCh:
+			// 	return
+			// case submitCh <- task:
+			// }
 		}
 	}()
 
