@@ -9,7 +9,7 @@ const (
 )
 
 type Stage interface {
-	Run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any
+	run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any
 }
 
 func NewStage[TInput, TOutput any](queueSize int, workerCount int, processFunc func(TInput) (TOutput, bool)) Stage {
@@ -29,7 +29,7 @@ type stageImpl[TInput, TOutput any] struct {
 	processFunc func(TInput) (TOutput, bool)
 }
 
-func (s *stageImpl[TInput, TOutput]) Run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any {
+func (s *stageImpl[TInput, TOutput]) run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any {
 	if role == producer {
 		outputCh := make(chan any, s.queueSize)
 		go func() {
@@ -132,7 +132,7 @@ func (p *pipelineImpl) Run() {
 		} else if i == len(p.stages)-1 {
 			role = finalizer
 		}
-		inputCh = stage.Run(inputCh, stopCh, role)
+		inputCh = stage.run(inputCh, stopCh, role)
 	}
 
 	// finalizer should simply close this ch
