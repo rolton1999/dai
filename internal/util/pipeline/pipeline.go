@@ -21,6 +21,27 @@ func NewStage[TInput, TOutput any](queueSize int, workerCount int, processFunc f
 	}
 }
 
+func NewStageWithoutInput[TOutput any](queueSize int, workerCount int, processFunc func() (TOutput, bool)) Stage {
+	return &stageImpl[any, TOutput]{
+		processFunc: func(any) (TOutput, bool) { return processFunc() },
+		workerPool:  NewWorkerPool[TOutput](queueSize),
+		queueSize:   queueSize,
+		workerCount: workerCount,
+	}
+}
+
+func NewStageWithoutOutput[TInput any](queueSize int, workerCount int, processFunc func(TInput)) Stage {
+	return &stageImpl[TInput, any]{
+		processFunc: func(input TInput) (any, bool) {
+			processFunc(input)
+			return struct{}{}, true
+		},
+		workerPool:  NewWorkerPool[any](queueSize),
+		queueSize:   queueSize,
+		workerCount: workerCount,
+	}
+}
+
 type stageImpl[TInput, TOutput any] struct {
 	workerPool  WorkerPool[TOutput]
 	queueSize   int

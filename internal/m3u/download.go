@@ -55,7 +55,7 @@ type segmentMeta struct {
 
 func getProduceStage(segmentMetas []segmentMeta) pipeline.Stage {
 	segmentMetaProducedIdx := 0
-	return pipeline.NewStage(1, 1, func(_ struct{}) (segmentMeta, bool) {
+	return pipeline.NewStageWithoutInput(1, 1, func() (segmentMeta, bool) {
 		getNext := func() (segmentMeta, bool) {
 			if segmentMetaProducedIdx == len(segmentMetas) {
 				return segmentMeta{}, true
@@ -96,21 +96,20 @@ func getLoadStage() pipeline.Stage {
 func getConsumeStage(logger util.Logger, howMany int, err *error) (pipeline.Stage, []string) {
 	loadMetaConsumedIdx := 0
 	listOfFiles := make([]string, howMany)
-	return pipeline.NewStage(1, 1, func(meta segmentLoadMeta) (struct{}, bool) {
-		process := func(meta segmentLoadMeta) (struct{}, bool) {
+	return pipeline.NewStageWithoutOutput(1, 1, func(meta segmentLoadMeta) {
+		process := func(meta segmentLoadMeta) {
 			if meta.err != nil {
 				*err = meta.err
-				return struct{}{}, false
+				return
 			}
 
 			listOfFiles[meta.segmentIndex] = meta.fileName
 			logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*loadMetaConsumedIdx/len(listOfFiles)))
 
 			loadMetaConsumedIdx += 1
-			return struct{}{}, false
 		}
 
-		return process(meta)
+		process(meta)
 	}), listOfFiles
 }
 
