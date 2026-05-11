@@ -55,15 +55,15 @@ type segmentMeta struct {
 
 func getProduceStage(segmentMetas []segmentMeta) pipeline.Stage {
 	segmentMetaProducedIdx := 0
-	return pipeline.NewStageWithoutInput(1, 1, func() (segmentMeta, bool) {
-		getNext := func() (segmentMeta, bool) {
+	return pipeline.NewProducerStage(1, 1, func() (segmentMeta, error, bool) {
+		getNext := func() (segmentMeta, error, bool) {
 			if segmentMetaProducedIdx == len(segmentMetas) {
-				return segmentMeta{}, true
+				return segmentMeta{}, nil, true
 			}
 
 			meta := segmentMetas[segmentMetaProducedIdx]
 			segmentMetaProducedIdx += 1
-			return meta, false
+			return meta, nil, false
 		}
 		return getNext()
 	})
@@ -75,41 +75,43 @@ func getLoadStage() pipeline.Stage {
 		loaderWorkers   = 10
 	)
 
-	return pipeline.NewStage(loaderQueueSize, loaderWorkers, func(meta segmentMeta) segmentLoadMeta {
+	return pipeline.NewMediumStage(loaderQueueSize, loaderWorkers, func(meta segmentMeta) (segmentLoadMeta, error) {
 		resp, err := http.Get(meta.link)
 		if err != nil {
-			return segmentLoadMeta{0, "", fmt.Errorf("cannot get first segment link: %w", err)}
+			return segmentLoadMeta{0, "", fmt.Errorf("cannot get first segment link: %w", err)}, err
 		}
 
 		file, err := os.Create(meta.fileName)
 		if err != nil {
-			return segmentLoadMeta{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}
+			return segmentLoadMeta{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}, err
 		}
 
 		io.Copy(file, resp.Body)
 		_ = file.Close()
 
-		return segmentLoadMeta{meta.index, meta.fileName, nil}
+		return segmentLoadMeta{meta.index, meta.fileName, nil}, nil
 	})
 }
 
 func getConsumeStage(logger util.Logger, howMany int, err *error) (pipeline.Stage, []string) {
 	loadMetaConsumedIdx := 0
 	listOfFiles := make([]string, howMany)
-	return pipeline.NewStageWithoutOutput(1, 1, func(meta segmentLoadMeta) {
-		process := func(meta segmentLoadMeta) {
+	return pipeline.NewFinalizerStage(1, 1, func(meta segmentLoadMeta) error {
+		process := func(meta segmentLoadMeta) error {
 			if meta.err != nil {
 				*err = meta.err
-				return
+				return nil
 			}
 
 			listOfFiles[meta.segmentIndex] = meta.fileName
 			logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*loadMetaConsumedIdx/len(listOfFiles)))
 
 			loadMetaConsumedIdx += 1
+
+			return nil
 		}
 
-		process(meta)
+		return process(meta)
 	}), listOfFiles
 }
 

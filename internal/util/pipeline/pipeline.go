@@ -8,33 +8,43 @@ const (
 	finalizer
 )
 
+type produceFn[TOutput any] = func() (TOutput, error, bool)
+type processFn[TInput, TOutput any] = func(TInput) (TOutput, error)
+type finalizeFn[TInput any] = func(TInput) error
+
 type Stage interface {
 	run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any
 }
 
-func NewStage[TInput, TOutput any](queueSize int, workerCount int, processFunc func(TInput) TOutput) Stage {
-	return &stageImpl[TInput, TOutput]{
-		processFunc: func(input TInput) (TOutput, bool) { return processFunc(input), true },
-		workerPool:  NewWorkerPool[TOutput](queueSize),
-		queueSize:   queueSize,
-		workerCount: workerCount,
-	}
-}
-
-func NewStageWithoutInput[TOutput any](queueSize int, workerCount int, processFunc func() (TOutput, bool)) Stage {
+func NewProducerStage[TOutput any](queueSize int, workerCount int, fn produceFn[TOutput]) Stage {
 	return &stageImpl[any, TOutput]{
-		processFunc: func(any) (TOutput, bool) { return processFunc() },
+		fn: func(any) (TOutput, error, bool) {
+			out, err, done := fn()
+			return out, err, done
+		},
 		workerPool:  NewWorkerPool[TOutput](queueSize),
 		queueSize:   queueSize,
 		workerCount: workerCount,
 	}
 }
 
-func NewStageWithoutOutput[TInput any](queueSize int, workerCount int, processFunc func(TInput)) Stage {
+func NewMediumStage[TInput, TOutput any](queueSize int, workerCount int, fn processFn[TInput, TOutput]) Stage {
+	return &stageImpl[TInput, TOutput]{
+		fn: func(input TInput) (TOutput, error, bool) {
+			out, err := fn(input)
+			return out, err, false
+		},
+		workerPool:  NewWorkerPool[TOutput](queueSize),
+		queueSize:   queueSize,
+		workerCount: workerCount,
+	}
+}
+
+func NewFinalizerStage[TInput any](queueSize int, workerCount int, fn finalizeFn[TInput]) Stage {
 	return &stageImpl[TInput, any]{
-		processFunc: func(input TInput) (any, bool) {
-			processFunc(input)
-			return struct{}{}, true
+		fn: func(input TInput) (any, error, bool) {
+			err := fn(input)
+			return struct{}{}, err, true
 		},
 		workerPool:  NewWorkerPool[any](queueSize),
 		queueSize:   queueSize,
@@ -47,21 +57,18 @@ type stageImpl[TInput, TOutput any] struct {
 	queueSize   int
 	workerCount int
 
-	processFunc func(TInput) (TOutput, bool)
+	fn func(TInput) (TOutput, error, bool)
 }
 
 // how to stop producers?
 func (s *stageImpl[TInput, TOutput]) runAsProcucer(stopCh chan struct{}) <-chan any {
 	outputCh := make(chan any, s.queueSize)
-	// outputCh := s.workerPool.Start(s.workerCount)
 	go func() {
-		// defer s.workerPool.DrainAndStop()
-		// submitCh := s.workerPool.GetSubmitCh()
 		defer close(outputCh)
 		var dummyInput TInput
 
 		for {
-			out, done := s.processFunc(dummyInput)
+			out, _, done := s.fn(dummyInput)
 			if done {
 				return
 			}
@@ -70,19 +77,6 @@ func (s *stageImpl[TInput, TOutput]) runAsProcucer(stopCh chan struct{}) <-chan 
 				return
 			case outputCh <- out:
 			}
-			// task := func() TOutput {
-			// 	out, done := s.processFunc(dummyInput)
-			// 	if done {
-			// 		produceDone.Store(true)
-			// 	}
-			// 	return out
-			// }
-
-			// select {
-			// case <-stopCh:
-			// 	return
-			// case submitCh <- task:
-			// }
 		}
 	}()
 
@@ -105,7 +99,7 @@ func (s *stageImpl[TInput, TOutput]) runAsMedium(inputCh <-chan any, stopCh chan
 				}
 				input := inputI.(TInput)
 				task := func() TOutput {
-					out, _ := s.processFunc(input)
+					out, _, _ := s.fn(input)
 					return out
 				}
 				select {
@@ -133,7 +127,7 @@ func (s *stageImpl[TInput, TOutput]) runAsFinalizer(inputCh <-chan any, stopCh c
 					return
 				}
 				input := inputI.(TInput)
-				s.processFunc(input)
+				s.fn(input)
 			}
 		}
 	}()
