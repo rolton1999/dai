@@ -153,7 +153,10 @@ func (s *stageImpl[TInput, TOutput]) run(inputCh <-chan any, stopCh chan struct{
 }
 
 type Pipeline interface {
-	AppendStage(stage Stage)
+	AppendProducer(stage Stage)
+	AppendMedium(stage Stage)
+	AppendFinalizer(stage Stage)
+
 	Run()
 }
 
@@ -162,10 +165,22 @@ func NewPipeline() Pipeline {
 }
 
 type pipelineImpl struct {
+	producers  []Stage
+	mediums    []Stage
+	finalizers []Stage
+
 	stages []Stage
 }
 
-func (p *pipelineImpl) AppendStage(stage Stage) {
+func (p *pipelineImpl) AppendProducer(stage Stage) {
+	p.stages = append(p.stages, stage)
+}
+
+func (p *pipelineImpl) AppendMedium(stage Stage) {
+	p.stages = append(p.stages, stage)
+}
+
+func (p *pipelineImpl) AppendFinalizer(stage Stage) {
 	p.stages = append(p.stages, stage)
 }
 

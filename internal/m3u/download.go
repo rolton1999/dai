@@ -29,9 +29,9 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 	consumeStage, listOfFiles := getConsumeStage(logger, len(segmentMetas), &err)
 
 	pipeline := pipeline.NewPipeline()
-	pipeline.AppendStage(produceStage)
-	pipeline.AppendStage(loadStage)
-	pipeline.AppendStage(consumeStage)
+	pipeline.AppendProducer(produceStage)
+	pipeline.AppendMedium(loadStage)
+	pipeline.AppendFinalizer(consumeStage)
 	pipeline.Run()
 
 	if err != nil {
