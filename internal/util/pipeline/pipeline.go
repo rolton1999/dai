@@ -75,31 +75,33 @@ func NewProcessStage[TInput, TOutput any](fn ProcessFn[TInput, TOutput]) Process
 }
 
 func (s *processStageImpl[TInput, TOutput]) run(inputCh <-chan any, stopCh chan struct{}) <-chan any {
-	outputCh := s.workerPool.Start(s.workerCount)
-
-	go func() {
-		defer s.workerPool.DrainAndStop()
-		submitCh := s.workerPool.GetSubmitCh()
-		for {
-			select {
-			case <-stopCh:
-				return
-			case inputI, ok := <-inputCh:
-				if !ok {
-					return
-				}
-				input := inputI.(TInput)
-				task := func() TOutput {
-					out, _ := s.fn(input)
-					return out
-				}
+	outputCh := make(chan any, s.queueSize)
+	wg := sync.WaitGroup{}
+	for range s.workerCount {
+		wg.Go(func() {
+			for {
 				select {
 				case <-stopCh:
 					return
-				case submitCh <- task:
+				case inputI, ok := <-inputCh:
+					if !ok {
+						return
+					}
+					input := inputI.(TInput)
+					out, _ := s.fn(input)
+					select {
+					case <-stopCh:
+						return
+					case outputCh <- out:
+					}
 				}
 			}
-		}
+		})
+	}
+
+	go func() {
+		wg.Wait()
+		close(outputCh)
 	}()
 
 	return outputCh
@@ -116,7 +118,6 @@ func NewFinalizeStage[TInput any](fn FinalizeFn[TInput]) FinalizeStage {
 }
 
 func (s *finalizeStageImpl[TInput]) run(inputCh <-chan any, stopCh chan struct{}) <-chan any {
-	// TODO: make done mechanizsm
 	outputCh := make(chan any)
 	go func() {
 		defer close(outputCh)
@@ -191,17 +192,6 @@ func (p *pipelineImpl) Run() {
 	for i := range p.finalizers {
 		finalizedChs[i] = p.finalizers[i].run(consumersInputsChs[i], stopCh)
 	}
-	// for i, stage := range p.stages {
-	// 	var role stageRole = medium
-	// 	if i == 0 {
-	// 		role = producer
-	// 	} else if i == len(p.stages)-1 {
-	// 		role = finalizer
-	// 	}
-	// 	inputCh = stage.run(inputCh, stopCh, role)
-	// }
-
-	// finalizer should simply close this ch
 	<-fanIn(finalizedChs...)
 
 	close(stopCh)

@@ -41,7 +41,7 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 	return listOfFiles, nil
 }
 
-type segmentLoadMeta struct {
+type segmentLoadResult struct {
 	segmentIndex int
 	fileName     string
 	err          error
@@ -68,29 +68,29 @@ func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage {
 }
 
 func newLoadStage() pipeline.ProcessStage {
-	return pipeline.NewProcessStage(func(meta segmentMeta) (segmentLoadMeta, error) {
+	return pipeline.NewProcessStage(func(meta segmentMeta) (segmentLoadResult, error) {
 		resp, err := http.Get(meta.link)
 		if err != nil {
-			return segmentLoadMeta{0, "", fmt.Errorf("cannot get first segment link: %w", err)}, err
+			return segmentLoadResult{0, "", fmt.Errorf("cannot get first segment link: %w", err)}, err
 		}
 
 		file, err := os.Create(meta.fileName)
 		if err != nil {
-			return segmentLoadMeta{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}, err
+			return segmentLoadResult{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}, err
 		}
 
 		io.Copy(file, resp.Body)
 		_ = file.Close()
 
-		return segmentLoadMeta{meta.index, meta.fileName, nil}, nil
+		return segmentLoadResult{meta.index, meta.fileName, nil}, nil
 	})
 }
 
 func newConsumeStage(logger util.Logger, howMany int, err *error) (pipeline.FinalizeStage, []string) {
 	loadMetaConsumedIdx := 0
 	listOfFiles := make([]string, howMany)
-	return pipeline.NewFinalizeStage(func(meta segmentLoadMeta) error {
-		process := func(meta segmentLoadMeta) error {
+	return pipeline.NewFinalizeStage(func(meta segmentLoadResult) error {
+		process := func(meta segmentLoadResult) error {
 			if meta.err != nil {
 				*err = meta.err
 				return nil
