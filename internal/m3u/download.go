@@ -24,9 +24,9 @@ func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPl
 		return nil, fmt.Errorf("cannot parse master playlist: %w", err)
 	}
 
-	produceStage := getProduceStage(segmentMetas)
-	loadStage := getLoadStage()
-	consumeStage, listOfFiles := getConsumeStage(logger, len(segmentMetas), &err)
+	produceStage := newProduceStage(segmentMetas)
+	loadStage := newLoadStage()
+	consumeStage, listOfFiles := newConsumeStage(logger, len(segmentMetas), &err)
 
 	pipeline := pipeline.NewPipeline()
 	pipeline.AppendProducer(produceStage)
@@ -53,9 +53,10 @@ type segmentMeta struct {
 	fileName string
 }
 
-func getProduceStage(segmentMetas []segmentMeta) pipeline.Stage {
+func newProduceStage(segmentMetas []segmentMeta) pipeline.Stage {
+	const queueSize = 1
 	segmentMetaProducedIdx := 0
-	return pipeline.NewProducerStage(1, 1, func() (segmentMeta, error, bool) {
+	return pipeline.NewProducerStage(queueSize, func() (segmentMeta, error, bool) {
 		getNext := func() (segmentMeta, error, bool) {
 			if segmentMetaProducedIdx == len(segmentMetas) {
 				return segmentMeta{}, nil, true
@@ -69,7 +70,7 @@ func getProduceStage(segmentMetas []segmentMeta) pipeline.Stage {
 	})
 }
 
-func getLoadStage() pipeline.Stage {
+func newLoadStage() pipeline.Stage {
 	const (
 		loaderQueueSize = 10
 		loaderWorkers   = 10
@@ -93,10 +94,11 @@ func getLoadStage() pipeline.Stage {
 	})
 }
 
-func getConsumeStage(logger util.Logger, howMany int, err *error) (pipeline.Stage, []string) {
+func newConsumeStage(logger util.Logger, howMany int, err *error) (pipeline.Stage, []string) {
+	const queueSize = 1
 	loadMetaConsumedIdx := 0
 	listOfFiles := make([]string, howMany)
-	return pipeline.NewFinalizerStage(1, 1, func(meta segmentLoadMeta) error {
+	return pipeline.NewFinalizerStage(queueSize, func(meta segmentLoadMeta) error {
 		process := func(meta segmentLoadMeta) error {
 			if meta.err != nil {
 				*err = meta.err

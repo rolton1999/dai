@@ -1,5 +1,9 @@
 package pipeline
 
+import (
+	"sync"
+)
+
 type stageRole int
 
 const (
@@ -16,15 +20,13 @@ type Stage interface {
 	run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any
 }
 
-func NewProducerStage[TOutput any](queueSize int, workerCount int, fn produceFn[TOutput]) Stage {
+func NewProducerStage[TOutput any](queueSize int, fn produceFn[TOutput]) Stage {
 	return &stageImpl[any, TOutput]{
 		fn: func(any) (TOutput, error, bool) {
 			out, err, done := fn()
 			return out, err, done
 		},
-		workerPool:  NewWorkerPool[TOutput](queueSize),
-		queueSize:   queueSize,
-		workerCount: workerCount,
+		queueSize: queueSize,
 	}
 }
 
@@ -40,15 +42,13 @@ func NewMediumStage[TInput, TOutput any](queueSize int, workerCount int, fn proc
 	}
 }
 
-func NewFinalizerStage[TInput any](queueSize int, workerCount int, fn finalizeFn[TInput]) Stage {
+func NewFinalizerStage[TInput any](queueSize int, fn finalizeFn[TInput]) Stage {
 	return &stageImpl[TInput, any]{
 		fn: func(input TInput) (any, error, bool) {
 			err := fn(input)
 			return struct{}{}, err, true
 		},
-		workerPool:  NewWorkerPool[any](queueSize),
-		queueSize:   queueSize,
-		workerCount: workerCount,
+		queueSize: queueSize,
 	}
 }
 
@@ -107,7 +107,6 @@ func (s *stageImpl[TInput, TOutput]) runAsMedium(inputCh <-chan any, stopCh chan
 					return
 				case submitCh <- task:
 				}
-				// s.workerPool.Submit(task)
 			}
 		}
 	}()
@@ -167,39 +166,98 @@ type pipelineImpl struct {
 }
 
 func (p *pipelineImpl) AppendProducer(stage Stage) {
+	p.producers = append(p.producers, stage)
 	p.stages = append(p.stages, stage)
 }
 
 func (p *pipelineImpl) AppendMedium(stage Stage) {
+	p.mediums = append(p.mediums, stage)
 	p.stages = append(p.stages, stage)
 }
 
 func (p *pipelineImpl) AppendFinalizer(stage Stage) {
+	p.finalizers = append(p.finalizers, stage)
 	p.stages = append(p.stages, stage)
 }
 
 func (p *pipelineImpl) Run() {
-	if len(p.stages) == 0 {
-		panic("cannot do pipeline without any stages")
+	if len(p.producers) == 0 {
+		panic("cannot do pipeline without any producers")
 	}
-	if len(p.stages) == 1 {
-		panic("cannot do pipeline with only producer without consumers")
+	if len(p.finalizers) == 0 {
+		panic("cannot do pipeline without any finalizers")
 	}
 
 	var inputCh <-chan any
 	stopCh := make(chan struct{})
-	for i, stage := range p.stages {
-		var role stageRole = medium
-		if i == 0 {
-			role = producer
-		} else if i == len(p.stages)-1 {
-			role = finalizer
-		}
-		inputCh = stage.run(inputCh, stopCh, role)
+	producersChs := make([]<-chan any, len(p.producers))
+	for i := range p.producers {
+		producersChs[i] = p.producers[i].run(inputCh, stopCh, producer)
 	}
 
+	inputCh = fanIn(producersChs...)
+	for i := range p.mediums {
+		inputCh = p.mediums[i].run(inputCh, stopCh, medium)
+	}
+
+	consumersInputsChs := fanOut(inputCh, len(p.finalizers))
+	finalizedChs := make([]<-chan any, len(p.finalizers))
+	for i := range p.finalizers {
+		finalizedChs[i] = p.finalizers[i].run(consumersInputsChs[i], stopCh, finalizer)
+	}
+	// for i, stage := range p.stages {
+	// 	var role stageRole = medium
+	// 	if i == 0 {
+	// 		role = producer
+	// 	} else if i == len(p.stages)-1 {
+	// 		role = finalizer
+	// 	}
+	// 	inputCh = stage.run(inputCh, stopCh, role)
+	// }
+
 	// finalizer should simply close this ch
-	<-inputCh
+	<-fanIn(finalizedChs...)
 
 	close(stopCh)
+}
+
+func fanIn(chans ...<-chan any) <-chan any {
+	outCh := make(chan any)
+	wg := sync.WaitGroup{}
+
+	for _, ch := range chans {
+		wg.Go(func() {
+			for v := range ch {
+				outCh <- v
+			}
+		})
+	}
+
+	go func() {
+		wg.Wait()
+		close(outCh)
+	}()
+
+	return outCh
+}
+
+func fanOut(inputCh <-chan any, howMany int) []chan any {
+	outChs := make([]chan any, howMany)
+	for i := range outChs {
+		outChs[i] = make(chan any)
+	}
+
+	wg := sync.WaitGroup{}
+	for i := range howMany {
+		wg.Go(func() {
+			defer close(outChs[i])
+			for v := range inputCh {
+				outChs[i] <- v
+			}
+		})
+	}
+	go func() {
+		wg.Wait()
+	}()
+	return outChs
 }
