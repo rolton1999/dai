@@ -4,71 +4,41 @@ import (
 	"sync"
 )
 
-type stageRole int
+type ProduceFn[TOutput any] = func() (TOutput, error, bool)
+type ProcessFn[TInput, TOutput any] = func(TInput) (TOutput, error)
+type FinalizeFn[TInput any] = func(TInput) error
 
-const (
-	producer = iota
-	medium
-	finalizer
-)
-
-type produceFn[TOutput any] = func() (TOutput, error, bool)
-type processFn[TInput, TOutput any] = func(TInput) (TOutput, error)
-type finalizeFn[TInput any] = func(TInput) error
-
-type Stage interface {
-	run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any
+type ProduceStage interface {
+	run(stopCh chan struct{}) <-chan any
 }
 
-func NewProducerStage[TOutput any](queueSize int, fn produceFn[TOutput]) Stage {
-	return &stageImpl[any, TOutput]{
-		fn: func(any) (TOutput, error, bool) {
-			out, err, done := fn()
-			return out, err, done
-		},
-		queueSize: queueSize,
+type ProcessStage interface {
+	run(inputCh <-chan any, stopCh chan struct{}) <-chan any
+}
+
+type FinalizeStage interface {
+	run(inputCh <-chan any, stopCh chan struct{}) <-chan any
+}
+
+type produceStageImpl[TOutput any] struct {
+	outputQueueSize int
+	fn              ProduceFn[TOutput]
+}
+
+func NewProduceStage[TOutput any](fn ProduceFn[TOutput]) ProduceStage {
+	const outputQueueSize = 8
+	return &produceStageImpl[TOutput]{
+		outputQueueSize: outputQueueSize,
+		fn:              fn,
 	}
 }
 
-func NewMediumStage[TInput, TOutput any](queueSize int, workerCount int, fn processFn[TInput, TOutput]) Stage {
-	return &stageImpl[TInput, TOutput]{
-		fn: func(input TInput) (TOutput, error, bool) {
-			out, err := fn(input)
-			return out, err, false
-		},
-		workerPool:  NewWorkerPool[TOutput](queueSize),
-		queueSize:   queueSize,
-		workerCount: workerCount,
-	}
-}
-
-func NewFinalizerStage[TInput any](queueSize int, fn finalizeFn[TInput]) Stage {
-	return &stageImpl[TInput, any]{
-		fn: func(input TInput) (any, error, bool) {
-			err := fn(input)
-			return struct{}{}, err, true
-		},
-		queueSize: queueSize,
-	}
-}
-
-type stageImpl[TInput, TOutput any] struct {
-	workerPool  WorkerPool[TOutput]
-	queueSize   int
-	workerCount int
-
-	fn func(TInput) (TOutput, error, bool)
-}
-
-// how to stop producers?
-func (s *stageImpl[TInput, TOutput]) runAsProcucer(stopCh chan struct{}) <-chan any {
-	outputCh := make(chan any, s.queueSize)
+func (s *produceStageImpl[TOutput]) run(stopCh chan struct{}) <-chan any {
+	outputCh := make(chan any, s.outputQueueSize)
 	go func() {
 		defer close(outputCh)
-		var dummyInput TInput
-
 		for {
-			out, _, done := s.fn(dummyInput)
+			out, _, done := s.fn()
 			if done {
 				return
 			}
@@ -83,7 +53,28 @@ func (s *stageImpl[TInput, TOutput]) runAsProcucer(stopCh chan struct{}) <-chan 
 	return outputCh
 }
 
-func (s *stageImpl[TInput, TOutput]) runAsMedium(inputCh <-chan any, stopCh chan struct{}) <-chan any {
+type processStageImpl[TInput, TOutput any] struct {
+	workerPool  WorkerPool[TOutput]
+	queueSize   int
+	workerCount int
+
+	fn ProcessFn[TInput, TOutput]
+}
+
+func NewProcessStage[TInput, TOutput any](fn ProcessFn[TInput, TOutput]) ProcessStage {
+	const (
+		queueSize = 8
+		workers   = 8
+	)
+	return &processStageImpl[TInput, TOutput]{
+		workerPool:  NewWorkerPool[TOutput](queueSize),
+		queueSize:   queueSize,
+		workerCount: workers,
+		fn:          fn,
+	}
+}
+
+func (s *processStageImpl[TInput, TOutput]) run(inputCh <-chan any, stopCh chan struct{}) <-chan any {
 	outputCh := s.workerPool.Start(s.workerCount)
 
 	go func() {
@@ -99,7 +90,7 @@ func (s *stageImpl[TInput, TOutput]) runAsMedium(inputCh <-chan any, stopCh chan
 				}
 				input := inputI.(TInput)
 				task := func() TOutput {
-					out, _, _ := s.fn(input)
+					out, _ := s.fn(input)
 					return out
 				}
 				select {
@@ -113,8 +104,20 @@ func (s *stageImpl[TInput, TOutput]) runAsMedium(inputCh <-chan any, stopCh chan
 
 	return outputCh
 }
-func (s *stageImpl[TInput, TOutput]) runAsFinalizer(inputCh <-chan any, stopCh chan struct{}) <-chan any {
-	outputCh := make(chan any, s.queueSize)
+
+type finalizeStageImpl[TInput any] struct {
+	fn FinalizeFn[TInput]
+}
+
+func NewFinalizeStage[TInput any](fn FinalizeFn[TInput]) FinalizeStage {
+	return &finalizeStageImpl[TInput]{
+		fn: fn,
+	}
+}
+
+func (s *finalizeStageImpl[TInput]) run(inputCh <-chan any, stopCh chan struct{}) <-chan any {
+	// TODO: make done mechanizsm
+	outputCh := make(chan any)
 	go func() {
 		defer close(outputCh)
 		for {
@@ -133,22 +136,11 @@ func (s *stageImpl[TInput, TOutput]) runAsFinalizer(inputCh <-chan any, stopCh c
 
 	return outputCh
 }
-func (s *stageImpl[TInput, TOutput]) run(inputCh <-chan any, stopCh chan struct{}, role stageRole) <-chan any {
-	switch role {
-	case producer:
-		return s.runAsProcucer(stopCh)
-	case medium:
-		return s.runAsMedium(inputCh, stopCh)
-	case finalizer:
-		return s.runAsFinalizer(inputCh, stopCh)
-	}
-	panic("unknown stage")
-}
 
 type Pipeline interface {
-	AppendProducer(stage Stage)
-	AppendMedium(stage Stage)
-	AppendFinalizer(stage Stage)
+	AppendProducer(ProduceStage)
+	AppendMedium(ProcessStage)
+	AppendFinalizer(FinalizeStage)
 
 	Run()
 }
@@ -158,26 +150,21 @@ func NewPipeline() Pipeline {
 }
 
 type pipelineImpl struct {
-	producers  []Stage
-	mediums    []Stage
-	finalizers []Stage
-
-	stages []Stage
+	producers  []ProduceStage
+	mediums    []ProcessStage
+	finalizers []FinalizeStage
 }
 
-func (p *pipelineImpl) AppendProducer(stage Stage) {
+func (p *pipelineImpl) AppendProducer(stage ProduceStage) {
 	p.producers = append(p.producers, stage)
-	p.stages = append(p.stages, stage)
 }
 
-func (p *pipelineImpl) AppendMedium(stage Stage) {
+func (p *pipelineImpl) AppendMedium(stage ProcessStage) {
 	p.mediums = append(p.mediums, stage)
-	p.stages = append(p.stages, stage)
 }
 
-func (p *pipelineImpl) AppendFinalizer(stage Stage) {
+func (p *pipelineImpl) AppendFinalizer(stage FinalizeStage) {
 	p.finalizers = append(p.finalizers, stage)
-	p.stages = append(p.stages, stage)
 }
 
 func (p *pipelineImpl) Run() {
@@ -188,22 +175,21 @@ func (p *pipelineImpl) Run() {
 		panic("cannot do pipeline without any finalizers")
 	}
 
-	var inputCh <-chan any
 	stopCh := make(chan struct{})
 	producersChs := make([]<-chan any, len(p.producers))
 	for i := range p.producers {
-		producersChs[i] = p.producers[i].run(inputCh, stopCh, producer)
+		producersChs[i] = p.producers[i].run(stopCh)
 	}
 
-	inputCh = fanIn(producersChs...)
+	inputCh := fanIn(producersChs...)
 	for i := range p.mediums {
-		inputCh = p.mediums[i].run(inputCh, stopCh, medium)
+		inputCh = p.mediums[i].run(inputCh, stopCh)
 	}
 
 	consumersInputsChs := fanOut(inputCh, len(p.finalizers))
 	finalizedChs := make([]<-chan any, len(p.finalizers))
 	for i := range p.finalizers {
-		finalizedChs[i] = p.finalizers[i].run(consumersInputsChs[i], stopCh, finalizer)
+		finalizedChs[i] = p.finalizers[i].run(consumersInputsChs[i], stopCh)
 	}
 	// for i, stage := range p.stages {
 	// 	var role stageRole = medium

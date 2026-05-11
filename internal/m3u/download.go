@@ -53,30 +53,22 @@ type segmentMeta struct {
 	fileName string
 }
 
-func newProduceStage(segmentMetas []segmentMeta) pipeline.Stage {
-	const queueSize = 1
+func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage {
 	segmentMetaProducedIdx := 0
-	return pipeline.NewProducerStage(queueSize, func() (segmentMeta, error, bool) {
-		getNext := func() (segmentMeta, error, bool) {
-			if segmentMetaProducedIdx == len(segmentMetas) {
-				return segmentMeta{}, nil, true
-			}
-
-			meta := segmentMetas[segmentMetaProducedIdx]
-			segmentMetaProducedIdx += 1
-			return meta, nil, false
+	getNext := func() (segmentMeta, error, bool) {
+		if segmentMetaProducedIdx == len(segmentMetas) {
+			return segmentMeta{}, nil, true
 		}
-		return getNext()
-	})
+
+		meta := segmentMetas[segmentMetaProducedIdx]
+		segmentMetaProducedIdx += 1
+		return meta, nil, false
+	}
+	return pipeline.NewProduceStage(getNext)
 }
 
-func newLoadStage() pipeline.Stage {
-	const (
-		loaderQueueSize = 10
-		loaderWorkers   = 10
-	)
-
-	return pipeline.NewMediumStage(loaderQueueSize, loaderWorkers, func(meta segmentMeta) (segmentLoadMeta, error) {
+func newLoadStage() pipeline.ProcessStage {
+	return pipeline.NewProcessStage(func(meta segmentMeta) (segmentLoadMeta, error) {
 		resp, err := http.Get(meta.link)
 		if err != nil {
 			return segmentLoadMeta{0, "", fmt.Errorf("cannot get first segment link: %w", err)}, err
@@ -94,11 +86,10 @@ func newLoadStage() pipeline.Stage {
 	})
 }
 
-func newConsumeStage(logger util.Logger, howMany int, err *error) (pipeline.Stage, []string) {
-	const queueSize = 1
+func newConsumeStage(logger util.Logger, howMany int, err *error) (pipeline.FinalizeStage, []string) {
 	loadMetaConsumedIdx := 0
 	listOfFiles := make([]string, howMany)
-	return pipeline.NewFinalizerStage(queueSize, func(meta segmentLoadMeta) error {
+	return pipeline.NewFinalizeStage(func(meta segmentLoadMeta) error {
 		process := func(meta segmentLoadMeta) error {
 			if meta.err != nil {
 				*err = meta.err
