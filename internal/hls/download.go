@@ -1,16 +1,12 @@
 package hls
 
 import (
-	"bytes"
 	"dai/internal/pipeline"
 	"dai/internal/progress"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 )
 
 func DownloadTSFiles(logger progress.Logger, expectedName string, playlist VariantPlaylist) ([]string, error) {
@@ -21,7 +17,7 @@ func DownloadTSFiles(logger progress.Logger, expectedName string, playlist Varia
 
 	segmentMetas, err := collectSegmentMetas(playlist, dirName, expectedName)
 	if err != nil {
-		return nil, fmt.Errorf("cannot parse master playlist: %w", err)
+		return nil, fmt.Errorf("cannot parse media playlist: %w", err)
 	}
 
 	produceStage := newProduceStage(segmentMetas)
@@ -120,62 +116,4 @@ func newConsumeStage(logger progress.Logger, howMany int, err *error) (pipeline.
 
 		loadMetaConsumedIdx += 1
 	}), listOfFiles
-}
-
-/*
-What we get by playlist.link
-
-// #EXTM3U
-// #EXT-X-TARGETDURATION:7
-// #EXT-X-ALLOW-CACHE:YES
-// #EXT-X-PLAYLIST-TYPE:VOD
-// #EXT-X-VERSION:3
-// #EXT-X-MEDIA-SEQUENCE:1
-// #EXTINF:3.937,
-// e742a021efe5453586f12d4d08a836fe.mp4/segment-1-v1-a1.ts <- 7th line
-// #EXTINF:0.133,
-// e742a021efe5453586f12d4d08a836fe.mp4/segment-2-v1-a1.ts
-// #EXTINF:6.607,
-// e742a021efe5453586f12d4d08a836fe.mp4/segment-3-v1-a1.ts
-// #EXTINF:5.339,
-// ....
-// e742a021efe5453586f12d4d08a836fe.mp4/segment-1157-v1-a1.ts
-// #EXT-X-ENDLIST
-*/
-
-// Yes, it can be done without slice of structs but this is not the hottest place and code is much simpler
-func collectSegmentMetas(playlist VariantPlaylist, dirName, concatenatedResultName string) ([]segmentMeta, error) {
-	resp, err := http.Get(playlist.Link)
-	if err != nil {
-		return nil, fmt.Errorf("cannot get variantPlaylist link: %w", err)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-
-	if err != nil {
-		return nil, fmt.Errorf("cannot read variant playlist: %w", err)
-	}
-
-	linkPrefix := playlist.getPlayListLinkPrefix()
-
-	split := bytes.Split(body, []byte{'\n'})
-
-	concatenatedResultName = strings.ReplaceAll(concatenatedResultName, " ", "_")
-	concatenatedResultName = strings.ReplaceAll(concatenatedResultName, "/", "")
-
-	tmpFilePrefix := filepath.Join(dirName, concatenatedResultName)
-
-	howMany := (len(split) - 6 + 1) / 2 // see comment before the func
-
-	metas := make([]segmentMeta, 0, howMany)
-
-	for segmentIndex, i := 0, 7; i < len(split); segmentIndex, i = segmentIndex+1, i+2 {
-		segment := string(split[i])
-		link := linkPrefix + "/" + segment
-		fileName := tmpFilePrefix + "_" + strconv.Itoa(segmentIndex) + ".ts"
-		metas = append(metas, segmentMeta{segmentIndex, link, fileName})
-	}
-
-	return metas, nil
 }

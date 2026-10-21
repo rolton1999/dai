@@ -17,11 +17,14 @@ Tests:
 
 ## 2. Replace positional HLS parsing
 
-- [ ] Parse tags and URI lines explicitly instead of assuming fixed line offsets.
+- [x] Parse media playlist tags and URI lines explicitly instead of assuming fixed line offsets.
+- [ ] Replace positional parsing in master playlists.
 - [ ] Read variant attributes by name, respecting quoted commas.
-- [ ] Support LF, CRLF, blank lines, comments, optional tags, and reordered attributes.
-- [ ] Resolve variant and segment references against the final response URL after
-  redirects, including relative, root-relative, and absolute references.
+- [x] Support LF, CRLF, blank lines, comments, and variable headers in media playlists.
+- [ ] Support variable master playlist tags and reordered attributes.
+- [x] Resolve segment references against the final response URL after redirects,
+  including relative, root-relative, and absolute references.
+- [ ] Resolve variant references against the final master playlist URL.
 - [ ] Return errors for empty, malformed, or unsupported playlists instead of
   panicking or producing incomplete output.
 - [ ] Make best-variant selection reject empty lists and invalid resolutions.
@@ -157,7 +160,7 @@ Remaining findings from source inspection:
 | P1 | Output ownership: titles control output paths, concat manifests are shared across operations, and failed downloads leave temporary data behind. | `internal/download/download.go`, `internal/ffmpeg/concat.go`, `internal/hls/download.go` | Isolate concurrent downloads; exercise invalid titles, existing destinations, partial downloads, and conversion failures; verify unrelated files survive. |
 | P1 | Explicit failure contracts: pipeline callbacks discard errors; malformed HLS can panic; metadata HTTP failures can be accepted as success. | `internal/pipeline/produce_stage.go`, `internal/pipeline/process_stage.go`, `internal/hls`, `internal/rutube` | Public operation tests must observe the original failure and must not start conversion or report success. Add parser fuzz tests. |
 | P2 | Small behavior interfaces: provider requests and FFmpeg execution are package-level calls bound to default clients and executables, making isolated orchestration tests difficult. | `internal/rutube`, `internal/ffmpeg`, `internal/download` | Introduce minimal owner-defined interfaces and constructors that validate and allocate without starting I/O; test orchestration through injected HTTP and conversion behavior. |
-| P2 | Bounded input: response bodies are read with unbounded `io.ReadAll`, and pagination has no repeated-page detection or operation deadline. An oversized response can exhaust memory; repeated `next` values can loop indefinitely. | `internal/hls/playlist.go`, `internal/hls/download.go`, `internal/rutube/playlist_info.go`, `internal/rutube/video_info.go` | Add explicit metadata/playlist size limits and pagination safeguards; test oversized bodies and cyclic pagination with bounded completion. |
+| P2 | Bounded input: response bodies are read with unbounded `io.ReadAll`, and pagination has no repeated-page detection or operation deadline. An oversized response can exhaust memory; repeated `next` values can loop indefinitely. | `internal/hls/playlist.go`, `internal/hls/media_playlist.go`, `internal/rutube/playlist_info.go`, `internal/rutube/video_info.go` | Add explicit metadata/playlist size limits and pagination safeguards; test oversized bodies and cyclic pagination with bounded completion. |
 | P2 | Descriptive naming: legacy code still uses names such as `r`, `s`, `l`, `d`, `eBody`, and shadowing of the `bytes` package. Moving a file has not normalized its implementation. | `internal/hls`, `internal/progress/logger.go`, `internal/rutube`, `internal/ffmpeg/concat.go` | Rename identifiers when rewriting the affected implementation; run lint and tests without behavior changes. |
 | P2 | Named constants: playlist line offsets, progress percentages, FFmpeg arguments, and display messages remain embedded in functions or have generic names. | `internal/hls`, `internal/ffmpeg/concat.go`, `internal/progress` | Replace positional parsing rather than naming incorrect offsets; give remaining domain values descriptive owner-local constants and verify behavior. |
 | P2 | Safe repository checks: smoke tests still delete unrelated root files, and CI does not check whether mutating lint changed tracked files. | `Makefile`, `.github/workflows/lint.yml` | Test cleanup against unrelated fixture files and verify CI rejects uncommitted automatic fixes. |
@@ -177,3 +180,25 @@ Additional review constraints:
 Validation of the reorganization must include build, lint, race tests, and repeated
 pipeline tests that verify every item reaches the finalizer exactly once. Live
 Rutube compatibility remains unverified unless the opt-in smoke tests are run.
+
+## Fixed regression: phantom final segment
+
+The HTTP status check introduced on this branch exposed the existing positional
+media parser bug. For video `5d30a999322f6599f2a8f2883b1b3e6b`, the playlist has
+1,416 segment URIs and a trailing newline. The old parser produced 1,417 entries;
+the last was an empty URI, causing a request to the CDN directory. `master`
+ignored the HTTP error body, whereas this branch failed the download.
+
+The media parser now follows EXTINF entries, ignores blank lines and comments,
+resolves segment references correctly, and rejects empty or truncated playlists.
+The HTTP status check remains in place so real segment failures still abort.
+
+Verification:
+
+- The trailing-newline regression test reproduced HTTP 502 before the fix.
+- Public download tests cover trailing newlines, no trailing newline, CRLF,
+  variable headers, relative/root-relative/absolute segment URLs, malformed
+  playlists, and genuine HTTP 502 segment failures.
+- A temporary live check of the reported video selected the best variant and
+  parsed exactly 1,416 segments. A 1 KiB sample from the final real segment
+  returned HTTP 206. This does not validate a full video download or conversion.

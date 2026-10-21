@@ -26,15 +26,6 @@ func (s VariantPlaylist) String() string {
 	)
 }
 
-func (s VariantPlaylist) getPlayListLinkPrefix() string {
-	// s.link:
-	// https://river-4-439.rtbcdn.ru/hls-vod/jTj56pP38b8KlsNyOPuxkw/1777581612/3034/0x5000c500e9cf2c6e/435b723b2f89465bbfd0db7ccbf33bfd.mp4.m3u8?i=256x144_156
-	// need prefix:
-	// https://river-4-439.rtbcdn.ru/hls-vod/h33Jy-1bQMVb3cz8CzX0UQ/1777581666/3034/0x5000c500e9cf2c6e
-	li := strings.LastIndex(s.Link, "/")
-	return s.Link[:li]
-}
-
 // meta: #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=156000,FRAME-RATE=29.97,CODECS="avc1.4d400c, mp4a.40.2",RESOLUTION=256x144
 func variantPlaylistFromBytes(meta []byte, link []byte) (VariantPlaylist, error) {
 	var playList VariantPlaylist
