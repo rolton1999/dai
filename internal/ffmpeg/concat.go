@@ -5,17 +5,17 @@ import (
 	"os"
 	"os/exec"
 
-	"dai/internal/util"
+	"dai/internal/progress"
 )
 
-func ConcatTSToResult(logger util.Logger, tsFiles []string, resultName string) error {
+func ConcatTSToResult(logger progress.Logger, tsFiles []string, resultName string) error {
 	defer func() {
 		for _, tsFile := range tsFiles {
 			_ = os.RemoveAll(tsFile)
 		}
 	}()
 
-	stopConvertingMessage := util.SpinningMessage(logger, " ~ converting", ": READY")
+	stopConvertingMessage := progress.SpinningMessage(logger, " ~ converting", ": READY")
 
 	// write concat list file for ffmpeg concat demuxer
 	listPath := ".concat.txt"
@@ -24,14 +24,22 @@ func ConcatTSToResult(logger util.Logger, tsFiles []string, resultName string) e
 	if err != nil {
 		return fmt.Errorf("cannot create list file: %w", err)
 	}
+
 	defer func() {
-		listF.Close()
+		_ = listF.Close()
+
 		_ = os.Remove(listPath)
 	}()
 
 	// ffmpeg concat demuxer requires: file 'path'
 	for _, t := range tsFiles {
-		fmt.Fprintf(listF, "file '%s'\n", t)
+		if _, err := fmt.Fprintf(listF, "file '%s'\n", t); err != nil {
+			return fmt.Errorf("cannot write list file: %w", err)
+		}
+	}
+
+	if err := listF.Close(); err != nil {
+		return fmt.Errorf("cannot close list file: %w", err)
 	}
 
 	cmd := exec.Command(

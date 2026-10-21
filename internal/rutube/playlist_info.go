@@ -18,32 +18,37 @@ func (pi PlaylistInfo) String() string {
 }
 
 func GetPlaylistInfo(playlistID string) (PlaylistInfo, error) {
-	const playlistApiURL = "https://rutube.ru/api/playlist/custom/%s/?format=json"
-	const playlistApiDetailsURL = "https://rutube.ru/api/playlist/custom/%s/videos/?format=json"
+	const (
+		playlistApiURL        = "https://rutube.ru/api/playlist/custom/%s/?format=json"
+		playlistApiDetailsURL = "https://rutube.ru/api/playlist/custom/%s/videos/?format=json"
+	)
 
 	resp, err := http.Get(fmt.Sprintf(playlistApiURL, playlistID))
 	if err != nil {
 		return PlaylistInfo{}, fmt.Errorf("cannot get playlist info: %w", err)
 	}
-	defer resp.Body.Close()
 
 	// can get title from here
 	title, err := parseTitleFromPlaylistApiResponse(resp.Body)
+	_ = resp.Body.Close()
+
 	if err != nil {
 		return PlaylistInfo{}, fmt.Errorf("cannot parse playlist title from api reponse: %w", err)
 	}
 
 	res := PlaylistInfo{Title: title}
+
 	next := fmt.Sprintf(playlistApiDetailsURL, playlistID)
 	for len(next) != 0 {
 		resp, err = http.Get(next)
 		if err != nil {
 			return PlaylistInfo{}, fmt.Errorf("cannot get playlist details: %w", err)
 		}
-		defer resp.Body.Close()
 
 		var ids []string
+
 		ids, next, err = parseVideoIDsFromPlaylistApiResponse(resp.Body)
+		_ = resp.Body.Close()
 
 		if err != nil {
 			return PlaylistInfo{}, fmt.Errorf("cannot parse video IDs from api reponse: %w", err)
@@ -51,11 +56,15 @@ func GetPlaylistInfo(playlistID string) (PlaylistInfo, error) {
 
 		res.VideoIDs = append(res.VideoIDs, ids...)
 	}
+
 	return res, nil
 }
 
 func parseTitleFromPlaylistApiResponse(bodyReader io.Reader) (string, error) {
 	body, err := io.ReadAll(bodyReader)
+	if err != nil {
+		return "", fmt.Errorf("cannot read body: %w", err)
+	}
 
 	type expectedBody struct {
 		Title string `json:"title"`
@@ -73,15 +82,20 @@ func parseTitleFromPlaylistApiResponse(bodyReader io.Reader) (string, error) {
 
 func parseVideoIDsFromPlaylistApiResponse(bodyReader io.Reader) ([]string, string, error) {
 	body, err := io.ReadAll(bodyReader)
+	if err != nil {
+		return nil, "", fmt.Errorf("cannot read body: %w", err)
+	}
 
 	type result struct {
 		ID string `json:"id"`
 	}
+
 	type expectedBody struct {
 		Results []result `json:"results"`
 		HasNext bool     `json:"has_next"`
 		Next    string   `json:"next"`
 	}
+
 	var eBody expectedBody
 
 	err = json.Unmarshal(body, &eBody)

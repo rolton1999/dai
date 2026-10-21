@@ -1,15 +1,15 @@
-package usecase
+package download
 
 import (
 	"dai/internal/ffmpeg"
-	"dai/internal/m3u"
+	"dai/internal/hls"
+	"dai/internal/progress"
 	"dai/internal/rutube"
-	"dai/internal/util"
 
 	"fmt"
 )
 
-func DownloadSingleVideo(logger util.Logger, videoID string) error {
+func DownloadSingleVideo(logger progress.Logger, videoID string) error {
 	videoInfo, err := rutube.GetVideoInfo(videoID)
 	if err != nil {
 		return fmt.Errorf("cannot get videoInfo: %w", err)
@@ -19,14 +19,14 @@ func DownloadSingleVideo(logger util.Logger, videoID string) error {
 
 	logger.NewPrefix(resultingFileName)
 
-	variantPlaylists, err := m3u.GetVariantPlaylists(videoInfo.MasterPlaylistLink)
+	variantPlaylists, err := hls.GetVariantPlaylists(videoInfo.MasterPlaylistLink)
 	if err != nil {
 		return fmt.Errorf("cannot get variant playlists by master link: %w", err)
 	}
 
-	best := m3u.GetPlaylistWithBestResolution(variantPlaylists)
+	best := hls.GetPlaylistWithBestResolution(variantPlaylists)
 
-	tsFiles, err := m3u.DownloadTSFiles(logger, resultingFileName, best)
+	tsFiles, err := hls.DownloadTSFiles(logger, resultingFileName, best)
 	if err != nil {
 		return fmt.Errorf("cannot download ts files: %w", err)
 	}
@@ -41,7 +41,7 @@ func DownloadSingleVideo(logger util.Logger, videoID string) error {
 	return nil
 }
 
-func DownloadPlaylist(logger util.Logger, playlistID string) error {
+func DownloadPlaylist(logger progress.Logger, playlistID string) error {
 	playlistInfo, err := rutube.GetPlaylistInfo(playlistID)
 	if err != nil {
 		return fmt.Errorf("cannot get playlist info: %w", err)

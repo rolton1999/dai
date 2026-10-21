@@ -1,9 +1,9 @@
-package m3u
+package hls
 
 import (
 	"bytes"
-	"dai/internal/util"
-	"dai/internal/util/pipeline"
+	"dai/internal/pipeline"
+	"dai/internal/progress"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-func DownloadTSFiles(logger util.Logger, expectedName string, playlist VariantPlaylist) ([]string, error) {
+func DownloadTSFiles(logger progress.Logger, expectedName string, playlist VariantPlaylist) ([]string, error) {
 	dirName, err := os.MkdirTemp("", "")
 	if err != nil {
 		return nil, fmt.Errorf("cannot create tmp dir: %w", err)
@@ -62,8 +62,10 @@ func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage {
 
 		meta := segmentMetas[segmentMetaProducedIdx]
 		segmentMetaProducedIdx += 1
+
 		return meta, nil, false
 	}
+
 	return pipeline.NewProduceStage(getNext)
 }
 
@@ -74,37 +76,49 @@ func newLoadStage() pipeline.ProcessStage {
 			return segmentLoadResult{0, "", fmt.Errorf("cannot get first segment link: %w", err)}, err
 		}
 
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			err := fmt.Errorf("cannot download segment: HTTP %d", resp.StatusCode)
+			return segmentLoadResult{meta.index, "", err}, err
+		}
+
 		file, err := os.Create(meta.fileName)
 		if err != nil {
 			return segmentLoadResult{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}, err
 		}
 
-		io.Copy(file, resp.Body)
-		_ = file.Close()
+		_, copyErr := io.Copy(file, resp.Body)
+		closeErr := file.Close()
+
+		if copyErr != nil {
+			err := fmt.Errorf("cannot write segment: %w", copyErr)
+			return segmentLoadResult{meta.index, "", err}, err
+		}
+
+		if closeErr != nil {
+			err := fmt.Errorf("cannot close segment: %w", closeErr)
+			return segmentLoadResult{meta.index, "", err}, err
+		}
 
 		return segmentLoadResult{meta.index, meta.fileName, nil}, nil
 	})
 }
 
-func newConsumeStage(logger util.Logger, howMany int, err *error) (pipeline.FinalizeStage, []string) {
+func newConsumeStage(logger progress.Logger, howMany int, err *error) (pipeline.FinalizeStage, []string) {
 	loadMetaConsumedIdx := 0
 	listOfFiles := make([]string, howMany)
-	return pipeline.NewFinalizeStage(func(meta segmentLoadResult) error {
-		process := func(meta segmentLoadResult) error {
-			if meta.err != nil {
-				*err = meta.err
-				return nil
-			}
 
-			listOfFiles[meta.segmentIndex] = meta.fileName
-			logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*loadMetaConsumedIdx/len(listOfFiles)))
-
-			loadMetaConsumedIdx += 1
-
-			return nil
+	return pipeline.NewFinalizeStage(func(meta segmentLoadResult) {
+		if meta.err != nil {
+			*err = meta.err
+			return
 		}
 
-		return process(meta)
+		listOfFiles[meta.segmentIndex] = meta.fileName
+		logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*loadMetaConsumedIdx/len(listOfFiles)))
+
+		loadMetaConsumedIdx += 1
 	}), listOfFiles
 }
 
@@ -137,7 +151,11 @@ func collectSegmentMetas(playlist VariantPlaylist, dirName, concatenatedResultNa
 	}
 
 	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
+
+	if err != nil {
+		return nil, fmt.Errorf("cannot read variant playlist: %w", err)
+	}
 
 	linkPrefix := playlist.getPlayListLinkPrefix()
 
