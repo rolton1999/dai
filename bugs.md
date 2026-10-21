@@ -60,6 +60,10 @@ Tests:
 
 ## 4. Propagate pipeline errors and own temporary data
 
+- [x] Retry interrupted segment transfers and temporary HTTP failures with bounded
+  attempts, exponential backoff, and per-attempt and per-segment deadlines.
+- [x] Remove partial segment files between attempts and remove the operation's
+  temporary directory when a download fails.
 - [ ] Propagate producer and processor errors to the caller instead of discarding
   them or requiring errors to be embedded in result values.
 - [ ] Cancel outstanding work after a failure and wait for workers to finish
@@ -157,7 +161,7 @@ Remaining findings from source inspection:
 | Priority | Rule and finding | Location | Required verification |
 | --- | --- | --- | --- |
 | P1 | Goroutine ownership and bounded waits: the spinner outlives failed conversion; HTTP and FFmpeg operations lack cancellation and deadlines. Pipeline stop signals cannot interrupt callbacks or blocked HTTP reads. | `internal/progress/spinner.go`, `internal/ffmpeg/concat.go`, `internal/hls/download.go`, `internal/pipeline` | Stall HTTP reads and process execution, cancel with a deadline, and verify workers and progress reporting stop before the operation returns. |
-| P1 | Output ownership: titles control output paths, concat manifests are shared across operations, and failed downloads leave temporary data behind. | `internal/download/download.go`, `internal/ffmpeg/concat.go`, `internal/hls/download.go` | Isolate concurrent downloads; exercise invalid titles, existing destinations, partial downloads, and conversion failures; verify unrelated files survive. |
+| P1 | Output ownership: titles control output paths, concat manifests are shared across operations, and successful conversion leaves its temporary directory behind. Failed segment downloads now clean up their operation directory. | `internal/download/download.go`, `internal/ffmpeg/concat.go`, `internal/hls/download.go` | Isolate concurrent downloads; exercise invalid titles, existing destinations, partial downloads, and conversion failures; verify unrelated files survive. |
 | P1 | Explicit failure contracts: pipeline callbacks discard errors; malformed HLS can panic; metadata HTTP failures can be accepted as success. | `internal/pipeline/produce_stage.go`, `internal/pipeline/process_stage.go`, `internal/hls`, `internal/rutube` | Public operation tests must observe the original failure and must not start conversion or report success. Add parser fuzz tests. |
 | P2 | Small behavior interfaces: provider requests and FFmpeg execution are package-level calls bound to default clients and executables, making isolated orchestration tests difficult. | `internal/rutube`, `internal/ffmpeg`, `internal/download` | Introduce minimal owner-defined interfaces and constructors that validate and allocate without starting I/O; test orchestration through injected HTTP and conversion behavior. |
 | P2 | Bounded input: response bodies are read with unbounded `io.ReadAll`, and pagination has no repeated-page detection or operation deadline. An oversized response can exhaust memory; repeated `next` values can loop indefinitely. | `internal/hls/playlist.go`, `internal/hls/media_playlist.go`, `internal/rutube/playlist_info.go`, `internal/rutube/video_info.go` | Add explicit metadata/playlist size limits and pagination safeguards; test oversized bodies and cyclic pagination with bounded completion. |
@@ -202,3 +206,33 @@ Verification:
 - A temporary live check of the reported video selected the best variant and
   parsed exactly 1,416 segments. A 1 KiB sample from the final real segment
   returned HTTP 206. This does not validate a full video download or conversion.
+
+## Fixed failure: interrupted segment transfers
+
+A segment response can end prematurely with `unexpected EOF`. The downloader
+previously aborted on the first interruption; `master` ignored the copy error and
+could pass a truncated segment to FFmpeg.
+
+Segment downloads now make at most four attempts. Unexpected EOF, short declared
+content length, network errors, and HTTP 408/429/500/502/503/504 are retried with
+250 ms, 500 ms, and 1 s delays. Each attempt has a 30 s deadline and the entire
+segment operation has a 2 min deadline. HTTP 404, file creation/write/close errors,
+and cancellation are not retried. Failure messages identify the segment and the
+number of attempts and preserve the underlying error.
+
+Each failed attempt closes its response and file and removes partial data before
+another attempt creates the segment again. Exhausted downloads remove their
+operation's temporary directory after all pipeline workers finish.
+
+Deterministic tests cover recovery from unexpected EOF, temporary HTTP 502, and
+short content length; replacement of longer partial data with the complete
+response; bounded exhaustion; closed response bodies; permanent errors;
+cancellation during backoff; and cleanup after public download failure. Retry
+unit tests inject waits to verify the backoff without sleeping.
+
+Live end-to-end verification of video `5d30a999322f6599f2a8f2883b1b3e6b` completed
+successfully in an isolated temporary directory in 145.3 seconds. The rebuilt CLI
+downloaded and converted the video with exit status zero. FFprobe reported H.264
+video at 1280x720, AAC audio, duration 5696.882698 seconds, and a 961773660-byte MP4.
+All live-test artifacts were removed afterward. Build, lint, race tests, and 50
+repetitions of the deterministic segment retry tests also passed.

@@ -1,10 +1,10 @@
 package hls
 
 import (
+	"context"
 	"dai/internal/pipeline"
 	"dai/internal/progress"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 )
@@ -14,6 +14,13 @@ func DownloadTSFiles(logger progress.Logger, expectedName string, playlist Varia
 	if err != nil {
 		return nil, fmt.Errorf("cannot create tmp dir: %w", err)
 	}
+
+	downloadSucceeded := false
+	defer func() {
+		if !downloadSucceeded {
+			_ = os.RemoveAll(dirName)
+		}
+	}()
 
 	segmentMetas, err := collectSegmentMetas(playlist, dirName, expectedName)
 	if err != nil {
@@ -33,6 +40,8 @@ func DownloadTSFiles(logger progress.Logger, expectedName string, playlist Varia
 	if err != nil {
 		return nil, err
 	}
+
+	downloadSucceeded = true
 
 	return listOfFiles, nil
 }
@@ -67,37 +76,15 @@ func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage {
 
 func newLoadStage() pipeline.ProcessStage {
 	return pipeline.NewProcessStage(func(meta segmentMeta) (segmentLoadResult, error) {
-		resp, err := http.Get(meta.link)
+		operationContext, cancel := context.WithTimeout(context.Background(), segmentDownloadTimeout)
+		defer cancel()
+
+		err := downloadSegment(operationContext, http.DefaultClient, meta, waitForSegmentRetry)
 		if err != nil {
-			return segmentLoadResult{0, "", fmt.Errorf("cannot get first segment link: %w", err)}, err
+			return segmentLoadResult{segmentIndex: meta.index, err: err}, err
 		}
 
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode != http.StatusOK {
-			err := fmt.Errorf("cannot download segment: HTTP %d", resp.StatusCode)
-			return segmentLoadResult{meta.index, "", err}, err
-		}
-
-		file, err := os.Create(meta.fileName)
-		if err != nil {
-			return segmentLoadResult{0, "", fmt.Errorf("cannot create file for ts-data: %w", err)}, err
-		}
-
-		_, copyErr := io.Copy(file, resp.Body)
-		closeErr := file.Close()
-
-		if copyErr != nil {
-			err := fmt.Errorf("cannot write segment: %w", copyErr)
-			return segmentLoadResult{meta.index, "", err}, err
-		}
-
-		if closeErr != nil {
-			err := fmt.Errorf("cannot close segment: %w", closeErr)
-			return segmentLoadResult{meta.index, "", err}, err
-		}
-
-		return segmentLoadResult{meta.index, meta.fileName, nil}, nil
+		return segmentLoadResult{segmentIndex: meta.index, fileName: meta.fileName}, nil
 	})
 }
 
