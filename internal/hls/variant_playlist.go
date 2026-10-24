@@ -46,6 +46,7 @@ type VariantPlaylist struct {
 func (variant VariantPlaylist) String() string {
 	return fmt.Sprintf(variantDisplayFormat, variant.bandwidth, variant.frameRate, variant.codecs, variant.resolution, variant.Link)
 }
+
 func variantPlaylistFromBytes(meta, link []byte) (VariantPlaylist, error) {
 	attributes, err := parseAttributes(strings.TrimPrefix(string(meta), streamTag))
 	if err != nil {
@@ -96,6 +97,7 @@ func variantPlaylistFromBytes(meta, link []byte) (VariantPlaylist, error) {
 
 	return VariantPlaylist{bandwidth: bandwidth, frameRate: frameRate, codecs: codecs, resolution: Resolution{width: width, height: height}, Link: uri}, nil
 }
+
 func parseAttributes(value string) (map[string]string, error) {
 	if strings.HasSuffix(strings.TrimSpace(value), ",") {
 		return nil, errors.New(invalidHLSAttributeMessage)

@@ -153,6 +153,7 @@ func parseMasterPlaylist(body string, baseURL *url.URL) ([]VariantPlaylist, erro
 
 	return result, nil
 }
+
 func GetPlaylistWithBestResolution(variants []VariantPlaylist) (VariantPlaylist, error) {
 	if len(variants) == 0 {
 		return VariantPlaylist{}, errors.New(noVariantsMessage)

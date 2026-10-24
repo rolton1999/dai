@@ -33,11 +33,14 @@ func (body *statusResponseBody) Read(destination []byte) (int, error) {
 	body.reads++
 	return body.reader.Read(destination)
 }
+
 func (body *statusResponseBody) Close() error { body.closed = true; return nil }
+
 func newStatusBody(contents string) *statusResponseBody {
 	reader := strings.NewReader(contents)
 	return &statusResponseBody{reader: reader}
 }
+
 func installStatusTransport(test *testing.T, transport http.RoundTripper) {
 	test.Helper()
 
@@ -47,6 +50,7 @@ func installStatusTransport(test *testing.T, transport http.RoundTripper) {
 
 	http.DefaultClient = &http.Client{Transport: transport}
 }
+
 func TestVideoRejectsHTTPErrorBeforeParsing(test *testing.T) {
 	for _, status := range []int{http.StatusOK, http.StatusNotFound, http.StatusServiceUnavailable} {
 		test.Run(http.StatusText(status), func(test *testing.T) {
@@ -71,6 +75,7 @@ func TestVideoRejectsHTTPErrorBeforeParsing(test *testing.T) {
 		})
 	}
 }
+
 func TestPlaylistRejectsHTTPErrorAtEveryEndpoint(test *testing.T) {
 	for _, endpoint := range []string{retryPlaylistTitlePath, retryPlaylistVideosPath, retryPlaylistSecondPath} {
 		test.Run(endpoint, func(test *testing.T) {
@@ -127,6 +132,7 @@ func TestPlaylistRejectsHTTPErrorAtEveryEndpoint(test *testing.T) {
 		})
 	}
 }
+
 func TestMissingPlaylistCannotSucceed(test *testing.T) {
 	bodies := make([]*statusResponseBody, 0)
 	transport := retryTransport(func(request *http.Request) (*http.Response, error) {
@@ -151,6 +157,7 @@ func TestMissingPlaylistCannotSucceed(test *testing.T) {
 		verifyStatusBody(test, http.StatusNotFound, body, err)
 	}
 }
+
 func TestVideoClosesMalformedSuccessBody(test *testing.T) {
 	body := newStatusBody(statusMalformedBody)
 	transport := retryTransport(func(request *http.Request) (*http.Response, error) {
@@ -169,6 +176,7 @@ func TestVideoClosesMalformedSuccessBody(test *testing.T) {
 		test.Fatalf(statusBodyLifecycleFormat, body.reads, body.closed)
 	}
 }
+
 func verifyStatusBody(
 	test *testing.T,
 	status int,

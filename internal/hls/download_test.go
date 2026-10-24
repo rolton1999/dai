@@ -32,9 +32,11 @@ func (transport fixtureTransport) RoundTrip(request *http.Request) (*http.Respon
 
 type silentLogger struct{}
 
-func (silentLogger) NewPrefix(string)        {}
+func (silentLogger) NewPrefix(string) {}
+
 func (silentLogger) UpdateWithSuffix(string) {}
-func (silentLogger) PrintNewLine()           {}
+
+func (silentLogger) PrintNewLine() {}
 
 type interruptedSegmentReader struct{}
 

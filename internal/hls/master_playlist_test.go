@@ -45,6 +45,7 @@ func TestMasterPlaylistParsesFlexibleHeaders(test *testing.T) {
 		}
 	}
 }
+
 func TestMasterPlaylistRejectsMalformedOrUnsupportedInput(test *testing.T) {
 	baseURL, err := url.Parse(masterFixtureURL)
 	if err != nil {
@@ -77,6 +78,7 @@ func TestMasterPlaylistRejectsMalformedOrUnsupportedInput(test *testing.T) {
 		test.Fatal("accepted missing base URL")
 	}
 }
+
 func TestBestVariantSelection(test *testing.T) {
 	const (
 		higherBandwidth  = 2000
@@ -118,6 +120,7 @@ type masterBody struct {
 }
 
 func (body *masterBody) Close() error { body.closed = true; return nil }
+
 func TestMasterPlaylistResolvesAfterRedirect(test *testing.T) {
 	const (
 		redirectPath   = "/redirect"
@@ -169,6 +172,7 @@ func TestMasterPlaylistResolvesAfterRedirect(test *testing.T) {
 		test.Fatal("master response body was not closed")
 	}
 }
+
 func FuzzMasterPlaylist(fuzzer *testing.F) {
 	fuzzer.Add(masterFixtureBody)
 	fuzzer.Add("#EXTM3U")
