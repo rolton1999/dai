@@ -69,14 +69,6 @@ type clientImpl struct {
 	doer Doer
 }
 
-type StatusError struct {
-	Code int
-}
-
-func (status *StatusError) Error() string {
-	return fmt.Sprintf(statusErrorFormat, status.Code)
-}
-
 func (client *clientImpl) Read(operationContext context.Context, link string) (Response, error) {
 	if err := operationContext.Err(); err != nil {
 		return Response{}, err
@@ -144,4 +136,12 @@ func (client *clientImpl) Read(operationContext context.Context, link string) (R
 		Body: body,
 		URL:  finalURL,
 	}, nil
+}
+
+type StatusError struct {
+	Code int
+}
+
+func (status *StatusError) Error() string {
+	return fmt.Sprintf(statusErrorFormat, status.Code)
 }

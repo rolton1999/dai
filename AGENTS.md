@@ -119,6 +119,9 @@ tracked in `bugs.md` until implementation and tests are complete.
 - Keep each implementation's methods in one file. With one implementation, keep
   its interface and methods together. With several, keep the interface in the
   main file and put each implementation in its own file.
+- Within a file, keep each struct declaration and its methods together as one
+  group. Do not interleave another struct declaration or its methods within that
+  group.
 - Order declarations as interface, constructor, public methods, then helpers.
   Put every parameter on its own line for signatures with four or more
   parameters, including interface methods.
