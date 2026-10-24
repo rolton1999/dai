@@ -3,7 +3,7 @@ package hls
 import (
 	"bytes"
 	"context"
-	"dai/internal/progress"
+	"dai/internal/retry"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,7 +18,7 @@ func GetVariantPlaylists(masterPlaylistLink string) ([]VariantPlaylist, error) {
 
 	var result []VariantPlaylist
 
-	err := progress.Retry(operationContext, func(attemptContext context.Context) error {
+	err := retry.Do(operationContext, func(attemptContext context.Context) error {
 		var operationError error
 
 		result, operationError = getVariantPlaylists(attemptContext, masterPlaylistLink)

@@ -2,7 +2,7 @@ package rutube
 
 import (
 	"context"
-	"dai/internal/progress"
+	"dai/internal/retry"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,7 +28,7 @@ func GetVideoInfo(videoID string) (VideoInfo, error) {
 
 	var result VideoInfo
 
-	err := progress.Retry(operationContext, func(attemptContext context.Context) error {
+	err := retry.Do(operationContext, func(attemptContext context.Context) error {
 		var operationError error
 
 		result, operationError = getVideoInfo(attemptContext, videoID)

@@ -2,7 +2,7 @@ package rutube
 
 import (
 	"context"
-	"dai/internal/progress"
+	"dai/internal/retry"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,7 +25,7 @@ func GetPlaylistInfo(playlistID string) (PlaylistInfo, error) {
 
 	var result PlaylistInfo
 
-	err := progress.Retry(operationContext, func(attemptContext context.Context) error {
+	err := retry.Do(operationContext, func(attemptContext context.Context) error {
 		var operationError error
 
 		result, operationError = getPlaylistInfo(attemptContext, playlistID)

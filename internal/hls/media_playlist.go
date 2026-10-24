@@ -2,7 +2,7 @@ package hls
 
 import (
 	"context"
-	"dai/internal/progress"
+	"dai/internal/retry"
 	"errors"
 	"fmt"
 	"io"
@@ -36,7 +36,7 @@ func collectSegmentMetas(playlist VariantPlaylist, directoryName, resultName str
 
 	var result []segmentMeta
 
-	err := progress.Retry(operationContext, func(attemptContext context.Context) error {
+	err := retry.Do(operationContext, func(attemptContext context.Context) error {
 		var operationError error
 
 		result, operationError = collectSegmentMetasOnce(attemptContext, playlist, directoryName, resultName)

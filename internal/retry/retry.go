@@ -1,11 +1,11 @@
-package progress
+package retry
 
 import (
 	"context"
 	"time"
 )
 
-func Retry(operationContext context.Context, operation func(context.Context) error) error {
+func Do(operationContext context.Context, operation func(context.Context) error) error {
 	const (
 		retries        = 3
 		backoffTimeout = time.Second

@@ -239,7 +239,7 @@ repetitions of the deterministic segment retry tests also passed.
 
 ## Metadata retries and split live tests
 
-The supplied retry helper is exposed as `progress.Retry` and used for video
+The supplied retry helper is exposed as `retry.Do` and used for video
 metadata, complete playlist metadata, master playlists, and media playlists.
 These operations have a two-minute context deadline and at most three attempts.
 Cancellation is checked before attempts; backoff waits one and two seconds.

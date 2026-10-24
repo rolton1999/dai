@@ -19,6 +19,7 @@ an MP4. It has no database, HTTP server, or browser frontend.
 | `internal/hls` | HLS playlist parsing, variant selection, segment metadata, and segment downloads. |
 | `internal/ffmpeg` | FFmpeg invocation and concat manifest handling. |
 | `internal/progress` | Terminal progress reporting and spinner lifecycle. |
+| `internal/retry` | Context-aware retry execution and backoff. |
 | `internal/pipeline` | Bounded concurrent stage execution and stage contracts. |
 
 Keep process wiring in `cmd/dai`, argument handling in `internal/cli`, provider

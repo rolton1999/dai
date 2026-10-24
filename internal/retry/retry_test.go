@@ -1,4 +1,4 @@
-package progress
+package retry
 
 import (
 	"context"
@@ -11,7 +11,7 @@ var errRetryFixture = errors.New("retry fixture failure")
 func TestRetryRecovers(test *testing.T) {
 	attempts := 0
 
-	err := Retry(context.Background(), func(context.Context) error {
+	err := Do(context.Background(), func(context.Context) error {
 		attempts++
 		if attempts == 1 {
 			return errRetryFixture
@@ -29,7 +29,7 @@ func TestRetryExhaustsAttempts(test *testing.T) {
 
 	attempts := 0
 
-	err := Retry(context.Background(), func(context.Context) error {
+	err := Do(context.Background(), func(context.Context) error {
 		attempts++
 		return errRetryFixture
 	})
@@ -44,7 +44,7 @@ func TestRetryStopsOnCancellation(test *testing.T) {
 
 	attempts := 0
 
-	err := Retry(operationContext, func(context.Context) error {
+	err := Do(operationContext, func(context.Context) error {
 		attempts++
 
 		cancel()
@@ -55,7 +55,7 @@ func TestRetryStopsOnCancellation(test *testing.T) {
 		test.Fatalf("attempts=%d error=%v", attempts, err)
 	}
 
-	err = Retry(operationContext, func(context.Context) error {
+	err = Do(operationContext, func(context.Context) error {
 		test.Fatal("operation started after cancellation")
 		return nil
 	})
