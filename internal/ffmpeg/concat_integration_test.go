@@ -15,15 +15,22 @@ import (
 )
 
 const (
-	fixtureTimeout      = 30 * time.Second
-	fixtureFFmpeg       = "ffmpeg"
-	fixtureFFprobe      = "ffprobe"
-	fixtureSegmentName  = "segment.ts"
-	fixturePlainOutput  = "video.mp4"
-	fixtureColonOutput  = "6:57 video.mp4"
-	fixtureHyphenOutput = "-video.mp4"
-	fixtureInvalidData  = "invalid transport stream"
-	fixturePermissions  = 0o600
+	fixtureTimeout           = 30 * time.Second
+	fixtureFFmpeg            = "ffmpeg"
+	fixtureFFprobe           = "ffprobe"
+	fixtureSegmentName       = "segment.ts"
+	fixturePlainOutput       = "video.mp4"
+	fixtureColonOutput       = "6:57 video.mp4"
+	fixtureHyphenOutput      = "-video.mp4"
+	fixtureInvalidData       = "invalid transport stream"
+	fixturePermissions       = 0o600
+	fixtureGenerateArguments = "-hide_banner -loglevel error -f lavfi -i color=c=black:s=16x16:r=1 -t 1 -c:v mpeg2video -f mpegts"
+	fixtureProbeArguments    = "-v error -show_entries format=duration"
+	fixtureSuccessToken      = "READY"
+	fixtureGenerateError     = "cannot generate fixture: %v\n%s"
+	fixtureProbeError        = "invalid output: %v\n%s"
+	fixtureDiagnosticsError  = "expected FFmpeg diagnostics identifying the bad input, got %v"
+	fixtureFalseSuccessError = "failed conversion reported success"
 )
 
 type fixtureLogger struct {
@@ -46,20 +53,22 @@ func TestConcatAcceptsColonAndOptionLikeOutputNames(test *testing.T) {
 			operationContext, cancel := context.WithTimeout(context.Background(), fixtureTimeout)
 			defer cancel()
 
-			command := exec.CommandContext(operationContext, fixtureFFmpeg,
-				"-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=16x16:r=1",
-				"-t", "1", "-c:v", "mpeg2video", "-f", "mpegts", segment)
+			arguments := append(strings.Fields(fixtureGenerateArguments), segment)
+
+			command := exec.CommandContext(operationContext, fixtureFFmpeg, arguments...)
 			if output, err := command.CombinedOutput(); err != nil {
-				test.Fatalf("cannot generate fixture: %v\n%s", err, output)
+				test.Fatalf(fixtureGenerateError, err, output)
 			}
 
 			if err := ffmpeg.ConcatTSToResult(&fixtureLogger{}, []string{segment}, name); err != nil {
 				test.Fatal(err)
 			}
 
-			probe := exec.CommandContext(operationContext, fixtureFFprobe, "-v", "error", "-show_entries", "format=duration", filepath.Join(workspace, name))
+			probeArguments := append(strings.Fields(fixtureProbeArguments), filepath.Join(workspace, name))
+
+			probe := exec.CommandContext(operationContext, fixtureFFprobe, probeArguments...)
 			if output, err := probe.CombinedOutput(); err != nil {
-				test.Fatalf("invalid output: %v\n%s", err, output)
+				test.Fatalf(fixtureProbeError, err, output)
 			}
 		})
 	}
@@ -78,12 +87,12 @@ func TestConcatIncludesDiagnosticsAndDoesNotReportSuccessOnFailure(test *testing
 
 	err := ffmpeg.ConcatTSToResult(logger, []string{segment}, fixturePlainOutput)
 	if err == nil || !strings.Contains(err.Error(), fixtureSegmentName) {
-		test.Fatalf("expected FFmpeg diagnostics identifying the bad input, got %v", err)
+		test.Fatalf(fixtureDiagnosticsError, err)
 	}
 
 	for _, suffix := range logger.suffixes {
-		if strings.Contains(suffix, "READY") {
-			test.Fatal("failed conversion reported success")
+		if strings.Contains(suffix, fixtureSuccessToken) {
+			test.Fatal(fixtureFalseSuccessError)
 		}
 	}
 }

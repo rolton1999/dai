@@ -250,6 +250,28 @@ Tests cover timeout recovery, interrupted playlist bodies, cancellation, exhaust
 attempts, and restarting playlist metadata without duplicating earlier pages.
 
 `make e2e-single` and `make e2e-playlist` run independently and stream CLI progress
-and checksum results directly to the terminal. `make e2e` runs both, and
-`make e2e-singe` aliases the single-video target. The real single-video checksum
-test passed. The known colon-prefixed playlist filename conversion bug remains.
+and checksum results directly to the terminal. `make e2e` runs both. The real single-video checksum
+test passed. The colon-prefixed playlist filename conversion bug is fixed below.
+
+## Fixed failure: output title interpreted as a protocol
+
+The first E2E playlist title begins with `6:57`. Passing that relative filename
+directly to FFmpeg causes `Protocol not found` and exit status 8. The same valid
+generated transport stream converts successfully when the output path is
+absolute, independently of Rutube metadata or network downloads.
+
+Conversion now resolves the output filename to an absolute path, preserves FFmpeg
+diagnostics in returned errors, and stops the spinner before reporting either
+success or failure. Error paths do not print READY.
+
+Real FFmpeg regression tests cover plain, colon-prefixed, and leading-hyphen
+filenames, plus invalid-input diagnostics and failure reporting:
+
+```sh
+go test -tags=integration -race -timeout=60s ./internal/ffmpeg
+```
+
+The live playlist test converted its first two videos successfully after the fix,
+then stopped on a media-playlist TLS handshake timeout for the third video after
+the configured retries. The complete playlist checksum run has not passed yet;
+its reference hashes were not changed.

@@ -26,7 +26,6 @@ func ConcatTSToResult(logger progress.Logger, tsFiles []string, resultName strin
 		return fmt.Errorf(outputPathError, err)
 	}
 
-	// write concat list file for ffmpeg concat demuxer
 	listPath := ".concat.txt"
 
 	listF, err := os.Create(listPath)
