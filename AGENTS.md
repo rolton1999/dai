@@ -50,6 +50,11 @@ tracked in `bugs.md` until implementation and tests are complete.
   Empty values and ordinary zero/one bookkeeping may stay inline; values with
   domain meaning must have names.
 
+- Declare every struct field on its own line. Do not group field names in a
+  declaration such as `width, height int`, or put non-empty structs on one line.
+  Apply this rule to named and anonymous structs in production code and tests;
+  empty structs may remain `struct{}`.
+
 - Export the behavior callers need through small interfaces. Keep concrete
   implementations unexported and return an interface from exported constructors.
   Configuration structs, shared protocol/data structs, sentinel errors and

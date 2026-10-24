@@ -2,19 +2,18 @@ package hls
 
 import "fmt"
 
+const (
+	resolutionDisplayFormat = "%dx%d"
+)
+
 type Resolution struct {
-	w, h int
+	width  int
+	height int
 }
 
-func (r Resolution) Less(other Resolution) bool {
-	if r.w == other.w {
-		return r.h < other.h
-	}
-
-	return r.w < other.w
+func (resolution Resolution) Less(other Resolution) bool {
+	return int64(resolution.width)*int64(resolution.height) < int64(other.width)*int64(other.height)
 }
-
-func (r Resolution) String() string {
-	const template = "%dx%d"
-	return fmt.Sprintf(template, r.w, r.h)
+func (resolution Resolution) String() string {
+	return fmt.Sprintf(resolutionDisplayFormat, resolution.width, resolution.height)
 }
