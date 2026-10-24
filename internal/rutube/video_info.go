@@ -10,7 +10,10 @@ import (
 	"time"
 )
 
-const metadataRequestTimeout = 2 * time.Minute
+const (
+	metadataRequestTimeout        = 2 * time.Minute
+	metadataHTTPStatusErrorFormat = "cannot get Rutube metadata: HTTP %d"
+)
 
 type VideoInfo struct {
 	Title              string
@@ -49,15 +52,18 @@ func getVideoInfo(operationContext context.Context, videoID string) (VideoInfo, 
 		return VideoInfo{}, err
 	}
 
-	resp, err := http.DefaultClient.Do(request)
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return VideoInfo{}, fmt.Errorf("cannot get play/options: %w", err)
 	}
 
-	res, err := parseVideoInfoFromVideoApiResponse(resp.Body)
-	_ = resp.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
-	return res, err
+	if response.StatusCode != http.StatusOK {
+		return VideoInfo{}, fmt.Errorf(metadataHTTPStatusErrorFormat, response.StatusCode)
+	}
+
+	return parseVideoInfoFromVideoApiResponse(response.Body)
 }
 
 func parseVideoInfoFromVideoApiResponse(bodyReader io.Reader) (VideoInfo, error) {

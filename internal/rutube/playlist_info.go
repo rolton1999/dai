@@ -47,14 +47,18 @@ func getPlaylistInfo(operationContext context.Context, playlistID string) (Playl
 		return PlaylistInfo{}, err
 	}
 
-	resp, err := http.DefaultClient.Do(request)
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return PlaylistInfo{}, fmt.Errorf("cannot get playlist info: %w", err)
 	}
 
-	// can get title from here
-	title, err := parseTitleFromPlaylistApiResponse(resp.Body)
-	_ = resp.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		_ = response.Body.Close()
+		return PlaylistInfo{}, fmt.Errorf(metadataHTTPStatusErrorFormat, response.StatusCode)
+	}
+
+	title, err := parseTitleFromPlaylistApiResponse(response.Body)
+	_ = response.Body.Close()
 
 	if err != nil {
 		return PlaylistInfo{}, fmt.Errorf("cannot parse playlist title from api reponse: %w", err)
@@ -69,15 +73,20 @@ func getPlaylistInfo(operationContext context.Context, playlistID string) (Playl
 			return PlaylistInfo{}, err
 		}
 
-		resp, err = http.DefaultClient.Do(request)
+		response, err = http.DefaultClient.Do(request)
 		if err != nil {
 			return PlaylistInfo{}, fmt.Errorf("cannot get playlist details: %w", err)
 		}
 
+		if response.StatusCode != http.StatusOK {
+			_ = response.Body.Close()
+			return PlaylistInfo{}, fmt.Errorf(metadataHTTPStatusErrorFormat, response.StatusCode)
+		}
+
 		var ids []string
 
-		ids, next, err = parseVideoIDsFromPlaylistApiResponse(resp.Body)
-		_ = resp.Body.Close()
+		ids, next, err = parseVideoIDsFromPlaylistApiResponse(response.Body)
+		_ = response.Body.Close()
 
 		if err != nil {
 			return PlaylistInfo{}, fmt.Errorf("cannot parse video IDs from api reponse: %w", err)

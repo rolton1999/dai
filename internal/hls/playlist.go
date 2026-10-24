@@ -35,6 +35,7 @@ const (
 	playlistResponseURLIsMissingMessage = "playlist response URL is missing"
 	masterRequestErrorFormat            = "cannot get m3u8: %w"
 	masterReadErrorFormat               = "cannot read body of m3u8: %w"
+	masterHTTPStatusErrorFormat         = "cannot get master playlist: HTTP %d"
 )
 
 func GetVariantPlaylists(masterPlaylistLink string) ([]VariantPlaylist, error) {
@@ -66,6 +67,10 @@ func getVariantPlaylists(operationContext context.Context, masterPlaylistLink st
 	}
 
 	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf(masterHTTPStatusErrorFormat, response.StatusCode)
+	}
 
 	extM3UBytes, err := io.ReadAll(response.Body)
 	if err != nil {

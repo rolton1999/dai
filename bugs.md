@@ -80,7 +80,7 @@ Rutube compatibility was not rerun for this parsing-only change.
 ## 3. Bound HTTP requests and report failures explicitly
 
 - [ ] Introduce an injectable HTTP client with timeouts and context cancellation.
-- [ ] Check HTTP status before parsing metadata or playlists.
+- [x] Check HTTP status before parsing metadata or playlists.
 - [ ] Validate required metadata fields instead of accepting error JSON as an
   empty successful response.
 - [ ] Close response bodies on every success and failure path, including master
@@ -93,6 +93,21 @@ Tests:
 - Track response body closure on success and failure.
 - Verify a missing playlist returns an error instead of an empty success.
 - Verify timeouts and cancellation finish within bounded deadlines.
+
+HTTP status handling implemented independently on `codex/fix-http-status-handling`.
+Rutube video metadata, playlist titles, every playlist page and HLS master
+playlists now require HTTP 200 before reading/parsing the response. Error bodies
+are closed without being parsed; returned errors include the HTTP status.
+Regression fixtures reproduce HTTP 404/503 being accepted as successful metadata
+or playlists before the fix, including valid-looking bodies on error responses.
+Tests also cover success, body closure, malformed success JSON and a missing
+playlist through the public API. Required JSON field validation, injectable HTTP
+clients, response limits and retry classification remain separate fixes.
+
+Live checksum scripts and unchanged reference hashes now live in `tests/e2e`.
+Makefile targets use the new path; the script resolves the project root two levels
+above its location. The move is checked with shell syntax, Makefile dry runs and
+an isolated script fixture; it is not a new live Rutube verification.
 
 ## 4. Propagate pipeline errors and own temporary data
 
