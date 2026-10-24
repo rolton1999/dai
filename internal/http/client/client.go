@@ -25,10 +25,12 @@ const (
 type Doer interface {
 	Do(*http.Request) (*http.Response, error)
 }
+
 type Response struct {
 	Body []byte
 	URL  *url.URL
 }
+
 type Client interface {
 	Read(context.Context, string) (Response, error)
 }
@@ -66,6 +68,7 @@ func NewDoer() Doer {
 type clientImpl struct {
 	doer Doer
 }
+
 type StatusError struct {
 	Code int
 }

@@ -55,6 +55,9 @@ tracked in `bugs.md` until implementation and tests are complete.
   declaration such as `width, height int`, or put non-empty structs on one line.
   Apply this rule to named and anonymous structs in production code and tests;
   empty structs may remain `struct{}`.
+- Separate struct declarations from adjacent declarations with a blank line,
+  including other structs and interfaces. Apply this rule to production code
+  and tests.
 
 - Do not nest constructor or factory calls inside other constructor or factory
   calls. Create each dependency in a descriptive local variable first, then pass
