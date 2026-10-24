@@ -59,7 +59,7 @@ func TestInjectedMasterReaderHonorsCancellation(test *testing.T) {
 	})
 	network := &http.Client{Transport: transport}
 	reader := client.New(network)
-	client := NewPlaylistClient(reader)
+	client := newPlaylistClient(reader)
 	operationContext, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 

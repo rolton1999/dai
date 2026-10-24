@@ -107,6 +107,9 @@ tracked in `bugs.md` until implementation and tests are complete.
   }
   ```
 
+- Keep interfaces unexported when all their callers are inside the owning
+  package. Export an interface only when another package needs to name or use
+  that contract; do not export it for hypothetical future callers.
 - Export the behavior callers need through small interfaces. Keep concrete
   implementations unexported and return an interface from exported constructors.
   Configuration structs, shared protocol/data structs, sentinel errors and

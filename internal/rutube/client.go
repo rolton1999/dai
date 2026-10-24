@@ -6,12 +6,12 @@ import (
 	"dai/internal/retry"
 )
 
-type Client interface {
+type metadataProvider interface {
 	Video(context.Context, string) (VideoInfo, error)
 	Playlist(context.Context, string) (PlaylistInfo, error)
 }
 
-func New(reader client.Client) Client {
+func newClient(reader client.Client) metadataProvider {
 	if reader == nil {
 		reader = client.New(nil)
 	}

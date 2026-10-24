@@ -116,7 +116,7 @@ Section 3 completed on `codex/fix-metadata-validation`:
   reads. Requests have 45-second deadlines and default clients have 30-second TLS
   handshake limits. Metadata and playlist bodies are limited to 8 MiB, including unknown-length
   streams, and always close after success, status errors, truncation or read errors.
-- Rutube's injected `Client` accepts context explicitly for video and playlist
+- Rutube's injected metadata client accepts context explicitly for video and playlist
   operations. HLS master readers expose the same cancellation seam, and media
   readers accept the injected HTTP reader. Existing CLI entry points delegate to
   these bounded readers; metadata/playlist retries retain their existing two-minute

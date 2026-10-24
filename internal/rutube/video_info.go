@@ -34,7 +34,7 @@ func (vi VideoInfo) String() string {
 }
 
 func GetVideoInfo(videoID string) (VideoInfo, error) {
-	provider := New(nil)
+	provider := newClient(nil)
 	return provider.Video(context.Background(), videoID)
 }
 

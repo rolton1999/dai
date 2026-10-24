@@ -33,7 +33,7 @@ const (
 )
 
 func GetVariantPlaylists(masterPlaylistLink string) ([]VariantPlaylist, error) {
-	client := NewPlaylistClient(nil)
+	client := newPlaylistClient(nil)
 	return client.Variants(context.Background(), masterPlaylistLink)
 }
 

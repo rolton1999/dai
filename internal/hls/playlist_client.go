@@ -6,11 +6,11 @@ import (
 	"dai/internal/retry"
 )
 
-type PlaylistClient interface {
+type variantProvider interface {
 	Variants(context.Context, string) ([]VariantPlaylist, error)
 }
 
-func NewPlaylistClient(reader client.Client) PlaylistClient {
+func newPlaylistClient(reader client.Client) variantProvider {
 	if reader == nil {
 		reader = client.New(nil)
 	}
