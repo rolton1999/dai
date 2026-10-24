@@ -110,8 +110,17 @@ func TestDownloadTSFilesRecoversInterruptedSegment(test *testing.T) {
 	attempts := atomic.Int32{}
 	http.DefaultClient.Transport = fixtureTransport(func(request *http.Request) (*http.Response, error) {
 		if request.URL.Path == fixtureFirstSegmentPath && attempts.Add(1) == 1 {
-			body := io.MultiReader(strings.NewReader(partialBody), interruptedSegmentReader{})
-			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(body), Request: request}, nil
+			partialReader := strings.NewReader(partialBody)
+			body := io.MultiReader(partialReader, interruptedSegmentReader{})
+
+			responseBody := io.NopCloser(body)
+			response := &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       responseBody,
+				Request:    request,
+			}
+
+			return response, nil
 		}
 
 		return transport.RoundTrip(request)
@@ -167,7 +176,7 @@ func setFixtureClient(test *testing.T, playlist string, segmentStatus int) *atom
 	test.Cleanup(func() { http.DefaultClient = originalClient })
 
 	unexpectedRequests := &atomic.Int32{}
-	http.DefaultClient = &http.Client{Transport: fixtureTransport(func(request *http.Request) (*http.Response, error) {
+	transport := fixtureTransport(func(request *http.Request) (*http.Response, error) {
 		statusCode := http.StatusOK
 
 		var body string
@@ -187,8 +196,51 @@ func setFixtureClient(test *testing.T, playlist string, segmentStatus int) *atom
 			statusCode = http.StatusBadGateway
 		}
 
-		return &http.Response{StatusCode: statusCode, Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
-	})}
+		bodyReader := strings.NewReader(body)
+
+		responseBody := io.NopCloser(bodyReader)
+		response := &http.Response{
+			StatusCode: statusCode,
+			Body:       responseBody,
+			Request:    request,
+		}
+
+		return response, nil
+	})
+
+	http.DefaultClient = &http.Client{Transport: transport}
 
 	return unexpectedRequests
+}
+
+func TestDownloadTSFilesRejectsEncryptionBeforeSegmentRequests(test *testing.T) {
+	const (
+		header        = "#EXTM3U\n"
+		encryptionTag = "#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n"
+	)
+
+	playlist := strings.Replace(fixtureMinimalPlaylist, header, header+encryptionTag, 1)
+	setFixtureClient(test, playlist, http.StatusOK)
+
+	originalTransport := http.DefaultClient.Transport
+
+	var segmentRequests atomic.Int32
+
+	http.DefaultClient.Transport = fixtureTransport(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path != fixturePlaylistPath {
+			segmentRequests.Add(1)
+		}
+
+		return originalTransport.RoundTrip(request)
+	})
+
+	files, err := hls.DownloadTSFiles(silentLogger{}, fixtureOutputName, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
+	if err == nil || files != nil || segmentRequests.Load() != 0 {
+		test.Fatalf("files=%v error=%v segment requests=%d", files, err, segmentRequests.Load())
+	}
+
+	artifacts, err := os.ReadDir(os.Getenv(fixtureTemporaryDirectoryKey))
+	if err != nil || len(artifacts) != 0 {
+		test.Fatalf("temporary artifacts=%v error=%v", artifacts, err)
+	}
 }

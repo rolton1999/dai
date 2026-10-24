@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -14,20 +15,40 @@ import (
 )
 
 const (
-	mediaPlaylistHeader               = "#EXTM3U"
-	mediaSegmentDurationTag           = "#EXTINF:"
-	mediaCommentPrefix                = "#"
-	mediaSegmentExtension             = ".ts"
-	mediaSegmentSeparator             = "_"
-	mediaPlaylistRequestError         = "cannot get media playlist: %w"
-	mediaPlaylistStatusError          = "cannot get media playlist: HTTP %d"
-	mediaPlaylistReadError            = "cannot read media playlist: %w"
-	mediaPlaylistBaseURLError         = "cannot parse media playlist URL: %w"
-	mediaPlaylistHeaderError          = "expected media playlist header"
-	mediaPlaylistMissingURIError      = "media segment is missing its URI"
-	mediaPlaylistMissingDurationError = "media segment URI is missing EXTINF"
-	mediaPlaylistSegmentURLError      = "cannot parse segment URI: %w"
-	mediaPlaylistEmptyError           = "media playlist has no segments"
+	endListTag        = "#EXT-X-ENDLIST"
+	keyTag            = "#EXT-X-KEY:"
+	methodAttribute   = "METHOD"
+	unencryptedMethod = "NONE"
+	byteRangeTag      = "#EXT-X-BYTERANGE:"
+	mapTag            = "#EXT-X-MAP:"
+	partTag           = "#EXT-X-PART:"
+	skipTag           = "#EXT-X-SKIP:"
+)
+
+const (
+	mediaPlaylistHeaderError               = "expected media playlist header"
+	invalidSegmentOrderMessage             = "invalid segment order"
+	invalidSegmentDurationMessage          = "invalid segment duration"
+	mediaPlaylistMissingURIError           = "media segment is missing its URI"
+	encryptedHLSIsUnsupportedMessage       = "encrypted HLS is unsupported"
+	unsupportedMediaPlaylistFeatureMessage = "unsupported media playlist feature"
+	mediaPlaylistMissingDurationError      = "media segment URI is missing EXTINF"
+	invalidSegmentURLMessage               = "invalid segment URL"
+	incompleteOrLiveMediaPlaylistMessage   = "incomplete or live media playlist"
+)
+
+const (
+	mediaPlaylistHeader          = "#EXTM3U"
+	mediaSegmentDurationTag      = "#EXTINF:"
+	mediaCommentPrefix           = "#"
+	mediaSegmentExtension        = ".ts"
+	mediaSegmentSeparator        = "_"
+	mediaPlaylistRequestError    = "cannot get media playlist: %w"
+	mediaPlaylistStatusError     = "cannot get media playlist: HTTP %d"
+	mediaPlaylistReadError       = "cannot read media playlist: %w"
+	mediaPlaylistBaseURLError    = "cannot parse media playlist URL: %w"
+	mediaPlaylistSegmentURLError = "cannot parse segment URI: %w"
+	mediaPlaylistEmptyError      = "media playlist has no segments"
 )
 
 func collectSegmentMetas(playlist VariantPlaylist, directoryName, resultName string) ([]segmentMeta, error) {
@@ -110,6 +131,10 @@ segment URI; line positions and the trailing newline do not identify segments.
 Segment URIs are resolved against the final playlist URL after redirects.
 */
 func parseSegmentMetas(body string, baseURL *url.URL, filePrefix string) ([]segmentMeta, error) {
+	if baseURL == nil {
+		return nil, errors.New(playlistResponseURLIsMissingMessage)
+	}
+
 	lines := strings.Split(strings.TrimSpace(body), "\n")
 	if strings.TrimSpace(lines[0]) != mediaPlaylistHeader {
 		return nil, errors.New(mediaPlaylistHeaderError)
@@ -117,7 +142,7 @@ func parseSegmentMetas(body string, baseURL *url.URL, filePrefix string) ([]segm
 
 	var segments []segmentMeta
 
-	waitingForURI := false
+	waitingForURI, ended := false, false
 
 	for _, line := range lines[1:] {
 		line = strings.TrimSpace(line)
@@ -126,8 +151,15 @@ func parseSegmentMetas(body string, baseURL *url.URL, filePrefix string) ([]segm
 		}
 
 		if strings.HasPrefix(line, mediaSegmentDurationTag) {
-			if waitingForURI {
-				return nil, errors.New(mediaPlaylistMissingURIError)
+			if waitingForURI || ended {
+				return nil, errors.New(invalidSegmentOrderMessage)
+			}
+
+			durationText, _, hasSeparator := strings.Cut(strings.TrimPrefix(line, mediaSegmentDurationTag), ",")
+
+			duration, err := strconv.ParseFloat(durationText, 64)
+			if !hasSeparator || err != nil || duration <= 0 || math.IsNaN(duration) || math.IsInf(duration, 0) {
+				return nil, errors.New(invalidSegmentDurationMessage)
 			}
 
 			waitingForURI = true
@@ -135,30 +167,56 @@ func parseSegmentMetas(body string, baseURL *url.URL, filePrefix string) ([]segm
 			continue
 		}
 
+		if line == endListTag {
+			if waitingForURI {
+				return nil, errors.New(mediaPlaylistMissingURIError)
+			}
+
+			ended = true
+
+			continue
+		}
+
+		if strings.HasPrefix(line, keyTag) {
+			attributes, err := parseAttributes(strings.TrimPrefix(line, keyTag))
+			if err != nil || attributes[methodAttribute] != unencryptedMethod {
+				return nil, errors.New(encryptedHLSIsUnsupportedMessage)
+			}
+
+			continue
+		}
+
+		for _, unsupported := range []string{byteRangeTag, mapTag, partTag, skipTag, streamTag, iFramesOnlyTag} {
+			if strings.HasPrefix(line, unsupported) {
+				return nil, errors.New(unsupportedMediaPlaylistFeatureMessage)
+			}
+		}
+
 		if strings.HasPrefix(line, mediaCommentPrefix) {
 			continue
 		}
 
-		if !waitingForURI {
+		if !waitingForURI || ended {
 			return nil, errors.New(mediaPlaylistMissingDurationError)
 		}
 
-		segmentURL, err := url.Parse(line)
+		reference, err := url.Parse(line)
 		if err != nil {
 			return nil, fmt.Errorf(mediaPlaylistSegmentURLError, err)
 		}
 
+		resolved := baseURL.ResolveReference(reference)
+		if (resolved.Scheme != "http" && resolved.Scheme != "https") || resolved.Host == "" || resolved.User != nil {
+			return nil, errors.New(invalidSegmentURLMessage)
+		}
+
 		segmentIndex := len(segments)
-		segments = append(segments, segmentMeta{
-			index:    segmentIndex,
-			link:     baseURL.ResolveReference(segmentURL).String(),
-			fileName: filePrefix + mediaSegmentSeparator + strconv.Itoa(segmentIndex) + mediaSegmentExtension,
-		})
+		segments = append(segments, segmentMeta{index: segmentIndex, link: resolved.String(), fileName: filePrefix + mediaSegmentSeparator + strconv.Itoa(segmentIndex) + mediaSegmentExtension})
 		waitingForURI = false
 	}
 
-	if waitingForURI {
-		return nil, errors.New(mediaPlaylistMissingURIError)
+	if waitingForURI || !ended {
+		return nil, errors.New(incompleteOrLiveMediaPlaylistMessage)
 	}
 
 	if len(segments) == 0 {

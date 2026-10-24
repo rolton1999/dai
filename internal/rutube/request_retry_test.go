@@ -33,14 +33,25 @@ func TestVideoInfoRetriesInterruptedResponse(test *testing.T) {
 	test.Cleanup(func() { http.DefaultClient = originalClient })
 
 	attempts := 0
-	http.DefaultClient = &http.Client{Transport: retryTransport(func(request *http.Request) (*http.Response, error) {
+	transport := retryTransport(func(request *http.Request) (*http.Response, error) {
 		attempts++
 		if attempts == 1 {
 			return nil, &net.DNSError{Err: retryTimeoutMessage, IsTimeout: true}
 		}
 
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(retryVideoBody)), Request: request}, nil
-	})}
+		bodyReader := strings.NewReader(retryVideoBody)
+
+		responseBody := io.NopCloser(bodyReader)
+		response := &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       responseBody,
+			Request:    request,
+		}
+
+		return response, nil
+	})
+
+	http.DefaultClient = &http.Client{Transport: transport}
 
 	info, err := GetVideoInfo(retryVideoID)
 	if err != nil || attempts != 2 || info.MasterPlaylistLink == "" {
@@ -56,7 +67,7 @@ func TestPlaylistRetryDoesNotDuplicateEarlierPages(test *testing.T) {
 	test.Cleanup(func() { http.DefaultClient = originalClient })
 
 	secondPageAttempts := 0
-	http.DefaultClient = &http.Client{Transport: retryTransport(func(request *http.Request) (*http.Response, error) {
+	transport := retryTransport(func(request *http.Request) (*http.Response, error) {
 		var body string
 
 		switch request.URL.Path {
@@ -75,8 +86,19 @@ func TestPlaylistRetryDoesNotDuplicateEarlierPages(test *testing.T) {
 			test.Fatalf("unexpected request: %s", request.URL.Path)
 		}
 
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
-	})}
+		bodyReader := strings.NewReader(body)
+
+		responseBody := io.NopCloser(bodyReader)
+		response := &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       responseBody,
+			Request:    request,
+		}
+
+		return response, nil
+	})
+
+	http.DefaultClient = &http.Client{Transport: transport}
 
 	info, err := GetPlaylistInfo(retryPlaylistID)
 	if err != nil || secondPageAttempts != 2 || len(info.VideoIDs) != expectedVideos {

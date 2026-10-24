@@ -33,10 +33,10 @@ stages below remain separate work.
 - [x] Resolve segment references against the final response URL after redirects,
   including relative, root-relative, and absolute references.
 - [x] Resolve variant references against the final master playlist URL.
-- [ ] Return errors for empty, malformed, or unsupported playlists instead of
+- [x] Return errors for empty, malformed, or unsupported playlists instead of
   panicking or producing incomplete output.
 - [x] Make best-variant selection reject empty lists and invalid resolutions.
-- [ ] Explicitly reject unsupported encryption, byte ranges, and separate audio
+- [x] Explicitly reject unsupported encryption, byte ranges, and separate audio
   tracks until those features are implemented.
 
 Tests:
@@ -62,6 +62,20 @@ unsupported media-playlist features remain work for a separate branch.
 The download caller now propagates selection errors. HTTP retry policy, bounded
 reads, dependency injection, media parsing and download/conversion lifecycle are
 unchanged by this fix. No new live-service compatibility claim is made here.
+
+Media-playlist validation implemented independently on
+`codex/fix-hls-media-validation`. Parsing requires ENDLIST and positive, finite
+EXTINF durations. Encryption (except METHOD=NONE), byte ranges, initialization
+maps, partial/delta streams and I-frame-only playlists are rejected explicitly.
+Segment URLs must resolve to HTTP(S) without credentials. The existing Rutube
+response-structure example is preserved.
+
+`internal/hls/media_playlist_test.go` covers valid complete playlists, unsupported
+features, incomplete streams, malformed durations and invalid URLs. A public
+download regression verifies rejection before any segment request and cleanup of
+the operation's temporary directory. Both parsers now have fuzz targets. The media parser passed a five-second fuzz
+run covering over 305,000 inputs. Build, lint and race tests pass; live
+Rutube compatibility was not rerun for this parsing-only change.
 
 ## 3. Bound HTTP requests and report failures explicitly
 

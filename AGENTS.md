@@ -55,6 +55,41 @@ tracked in `bugs.md` until implementation and tests are complete.
   Apply this rule to named and anonymous structs in production code and tests;
   empty structs may remain `struct{}`.
 
+- Do not nest constructor or factory calls inside other constructor or factory
+  calls. Create each dependency in a descriptive local variable first, then pass
+  that variable to the outer constructor. Apply this rule to production code,
+  tests and standard-library wrappers such as readers and closers. Constructor
+  and factory calls must also stay outside struct literal field values: construct
+  each dependency first, then assign it to the field.
+
+  Avoid:
+
+  ```go
+  service := some.New(other.New())
+  ```
+
+  Prefer:
+
+  ```go
+  dependency := other.New()
+  service := some.New(dependency)
+  ```
+
+  The same rule applies to struct literals. Avoid:
+
+  ```go
+  response := &http.Response{Body: io.NopCloser(bodyReader)}
+  ```
+
+  Prefer:
+
+  ```go
+  responseBody := io.NopCloser(bodyReader)
+  response := &http.Response{
+      Body: responseBody,
+  }
+  ```
+
 - Export the behavior callers need through small interfaces. Keep concrete
   implementations unexported and return an interface from exported constructors.
   Configuration structs, shared protocol/data structs, sentinel errors and
