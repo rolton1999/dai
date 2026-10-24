@@ -2,7 +2,7 @@ package hls
 
 import (
 	"context"
-	"dai/internal/httpclient"
+	"dai/internal/http/client"
 	"errors"
 	"net/http"
 	"net/url"
@@ -40,7 +40,7 @@ func TestInjectedMediaReaderUsesFinalURLAndClosesBody(test *testing.T) {
 		return response, nil
 	})
 	network := &http.Client{Transport: transport}
-	reader := httpclient.New(network)
+	reader := client.New(network)
 	playlist := VariantPlaylist{Link: injectedMediaURL}
 
 	segments, err := collectSegmentMetasOnce(context.Background(), reader, playlist, "", injectedFilePrefix)
@@ -58,7 +58,7 @@ func TestInjectedMasterReaderHonorsCancellation(test *testing.T) {
 		return nil, request.Context().Err()
 	})
 	network := &http.Client{Transport: transport}
-	reader := httpclient.New(network)
+	reader := client.New(network)
 	client := NewPlaylistClient(reader)
 	operationContext, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)

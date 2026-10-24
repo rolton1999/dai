@@ -3,7 +3,7 @@ package rutube
 import (
 	"bytes"
 	"context"
-	"dai/internal/httpclient"
+	"dai/internal/http/client"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,13 +41,13 @@ func GetPlaylistInfo(playlistID string) (PlaylistInfo, error) {
 }
 
 func getPlaylistInfo(operationContext context.Context, playlistID string) (PlaylistInfo, error) {
-	reader := httpclient.New(nil)
+	reader := client.New(nil)
 	return getPlaylistInfoWithReader(operationContext, reader, playlistID)
 }
 
 func getPlaylistInfoWithReader(
 	operationContext context.Context,
-	reader httpclient.Client,
+	reader client.Client,
 	playlistID string,
 ) (PlaylistInfo, error) {
 	const (

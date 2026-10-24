@@ -2,7 +2,7 @@ package hls
 
 import (
 	"context"
-	"dai/internal/httpclient"
+	"dai/internal/http/client"
 	"errors"
 	"fmt"
 	"io"
@@ -26,7 +26,7 @@ const (
 
 func downloadSegment(
 	operationContext context.Context,
-	client httpclient.Doer,
+	client client.Doer,
 	meta segmentMeta,
 	wait func(context.Context, time.Duration) error,
 ) error {
@@ -56,7 +56,7 @@ func downloadSegment(
 	return nil
 }
 
-func downloadSegmentAttempt(operationContext context.Context, client httpclient.Doer, meta segmentMeta) (bool, error) {
+func downloadSegmentAttempt(operationContext context.Context, client client.Doer, meta segmentMeta) (bool, error) {
 	request, err := http.NewRequestWithContext(operationContext, http.MethodGet, meta.link, nil)
 	if err != nil {
 		return false, err

@@ -112,7 +112,7 @@ an isolated script fixture; it is not a new live Rutube verification.
 
 Section 3 completed on `codex/fix-metadata-validation`:
 
-- `internal/httpclient` owns a small injectable request interface and bounded
+- `internal/http/client` owns a small injectable request interface and bounded
   reads. Requests have 45-second deadlines and default clients have 30-second TLS
   handshake limits. Metadata and playlist bodies are limited to 8 MiB, including unknown-length
   streams, and always close after success, status errors, truncation or read errors.

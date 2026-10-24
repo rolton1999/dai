@@ -2,7 +2,7 @@ package rutube
 
 import (
 	"context"
-	"dai/internal/httpclient"
+	"dai/internal/http/client"
 	"errors"
 	"fmt"
 	"net/http"
@@ -33,16 +33,16 @@ type paginationReader struct {
 	mode  string
 }
 
-func (reader *paginationReader) Read(operationContext context.Context, link string) (httpclient.Response, error) {
+func (reader *paginationReader) Read(operationContext context.Context, link string) (client.Response, error) {
 	if err := operationContext.Err(); err != nil {
-		return httpclient.Response{}, err
+		return client.Response{}, err
 	}
 
 	reader.calls++
 
 	parsed, err := url.Parse(link)
 	if err != nil {
-		return httpclient.Response{}, err
+		return client.Response{}, err
 	}
 
 	body := retryPlaylistTitleBody
@@ -53,12 +53,12 @@ func (reader *paginationReader) Read(operationContext context.Context, link stri
 		} else {
 			body = fmt.Sprintf(clientNextPageTemplate, reader.calls)
 			if reader.mode == clientSizeMode {
-				body += strings.Repeat(" ", httpclient.MaximumBodySize-len(body))
+				body += strings.Repeat(" ", client.MaximumBodySize-len(body))
 			}
 		}
 	}
 
-	return httpclient.Response{Body: []byte(body), URL: parsed}, nil
+	return client.Response{Body: []byte(body), URL: parsed}, nil
 }
 
 func TestPlaylistPaginationIsBounded(test *testing.T) {
@@ -98,7 +98,7 @@ func TestInjectedProviderHonorsCancellation(test *testing.T) {
 				return nil, request.Context().Err()
 			})
 			network := &http.Client{Transport: transport}
-			reader := httpclient.New(network)
+			reader := client.New(network)
 			provider := New(reader)
 			operationContext, cancel := context.WithCancel(context.Background())
 			result := make(chan error, 1)
@@ -155,10 +155,10 @@ func TestInjectedProviderHonorsCancellation(test *testing.T) {
 
 type relativePageReader struct{}
 
-func (reader *relativePageReader) Read(_ context.Context, link string) (httpclient.Response, error) {
+func (reader *relativePageReader) Read(_ context.Context, link string) (client.Response, error) {
 	parsed, err := url.Parse(link)
 	if err != nil {
-		return httpclient.Response{}, err
+		return client.Response{}, err
 	}
 
 	body := retryPlaylistTitleBody
@@ -167,7 +167,7 @@ func (reader *relativePageReader) Read(_ context.Context, link string) (httpclie
 	case retryPlaylistVideosPath:
 		parsed, err = url.Parse(clientRedirectURL)
 		if err != nil {
-			return httpclient.Response{}, err
+			return client.Response{}, err
 		}
 
 		body = clientRelativePage
@@ -175,7 +175,7 @@ func (reader *relativePageReader) Read(_ context.Context, link string) (httpclie
 		body = retryPlaylistSecondPage
 	}
 
-	return httpclient.Response{Body: []byte(body), URL: parsed}, nil
+	return client.Response{Body: []byte(body), URL: parsed}, nil
 }
 
 func TestInjectedPlaylistResolvesRelativeNextAfterRedirect(test *testing.T) {

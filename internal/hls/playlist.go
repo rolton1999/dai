@@ -2,7 +2,7 @@ package hls
 
 import (
 	"context"
-	"dai/internal/httpclient"
+	"dai/internal/http/client"
 	"errors"
 	"net/url"
 	"strings"
@@ -38,13 +38,13 @@ func GetVariantPlaylists(masterPlaylistLink string) ([]VariantPlaylist, error) {
 }
 
 func getVariantPlaylists(operationContext context.Context, link string) ([]VariantPlaylist, error) {
-	reader := httpclient.New(nil)
+	reader := client.New(nil)
 	return getVariantPlaylistsWithReader(operationContext, reader, link)
 }
 
 func getVariantPlaylistsWithReader(
 	operationContext context.Context,
-	reader httpclient.Client,
+	reader client.Client,
 	link string,
 ) ([]VariantPlaylist, error) {
 	response, err := reader.Read(operationContext, link)

@@ -2,7 +2,7 @@ package hls
 
 import (
 	"context"
-	"dai/internal/httpclient"
+	"dai/internal/http/client"
 	"dai/internal/retry"
 )
 
@@ -10,16 +10,16 @@ type PlaylistClient interface {
 	Variants(context.Context, string) ([]VariantPlaylist, error)
 }
 
-func NewPlaylistClient(reader httpclient.Client) PlaylistClient {
+func NewPlaylistClient(reader client.Client) PlaylistClient {
 	if reader == nil {
-		reader = httpclient.New(nil)
+		reader = client.New(nil)
 	}
 
 	return &playlistClient{reader: reader}
 }
 
 type playlistClient struct {
-	reader httpclient.Client
+	reader client.Client
 }
 
 func (client *playlistClient) Variants(operationContext context.Context, link string) ([]VariantPlaylist, error) {

@@ -2,7 +2,7 @@ package hls
 
 import (
 	"context"
-	"dai/internal/httpclient"
+	"dai/internal/http/client"
 	"dai/internal/retry"
 	"errors"
 	"fmt"
@@ -47,7 +47,7 @@ const (
 )
 
 func collectSegmentMetas(playlist VariantPlaylist, directoryName, resultName string) ([]segmentMeta, error) {
-	reader := httpclient.New(nil)
+	reader := client.New(nil)
 
 	operationContext, cancel := context.WithTimeout(context.Background(), playlistRequestTimeout)
 	defer cancel()
@@ -67,7 +67,7 @@ func collectSegmentMetas(playlist VariantPlaylist, directoryName, resultName str
 
 func collectSegmentMetasOnce(
 	operationContext context.Context,
-	reader httpclient.Client,
+	reader client.Client,
 	playlist VariantPlaylist,
 	directoryName string,
 	resultName string,

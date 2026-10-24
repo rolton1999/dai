@@ -3,7 +3,7 @@ package rutube
 import (
 	"bytes"
 	"context"
-	"dai/internal/httpclient"
+	"dai/internal/http/client"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,13 +39,13 @@ func GetVideoInfo(videoID string) (VideoInfo, error) {
 }
 
 func getVideoInfo(operationContext context.Context, videoID string) (VideoInfo, error) {
-	reader := httpclient.New(nil)
+	reader := client.New(nil)
 	return getVideoInfoWithReader(operationContext, reader, videoID)
 }
 
 func getVideoInfoWithReader(
 	operationContext context.Context,
-	reader httpclient.Client,
+	reader client.Client,
 	videoID string,
 ) (VideoInfo, error) {
 	const videoAPI = "https://rutube.ru/api/play/options/%s/?format=json"

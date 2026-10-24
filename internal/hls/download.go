@@ -2,7 +2,7 @@ package hls
 
 import (
 	"context"
-	"dai/internal/httpclient"
+	"dai/internal/http/client"
 	"dai/internal/pipeline"
 	"dai/internal/progress"
 	"fmt"
@@ -75,7 +75,7 @@ func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage {
 }
 
 func newLoadStage() pipeline.ProcessStage {
-	network := httpclient.NewDoer()
+	network := client.NewDoer()
 
 	return pipeline.NewProcessStage(func(meta segmentMeta) (segmentLoadResult, error) {
 		operationContext, cancel := context.WithTimeout(context.Background(), segmentDownloadTimeout)

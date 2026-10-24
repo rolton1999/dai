@@ -2,7 +2,7 @@ package rutube
 
 import (
 	"context"
-	"dai/internal/httpclient"
+	"dai/internal/http/client"
 	"dai/internal/retry"
 )
 
@@ -11,16 +11,16 @@ type Client interface {
 	Playlist(context.Context, string) (PlaylistInfo, error)
 }
 
-func New(reader httpclient.Client) Client {
+func New(reader client.Client) Client {
 	if reader == nil {
-		reader = httpclient.New(nil)
+		reader = client.New(nil)
 	}
 
 	return &metadataClient{reader: reader}
 }
 
 type metadataClient struct {
-	reader httpclient.Client
+	reader client.Client
 }
 
 func (client *metadataClient) Video(operationContext context.Context, videoID string) (VideoInfo, error) {
