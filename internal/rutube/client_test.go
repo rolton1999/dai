@@ -88,7 +88,10 @@ func TestPlaylistPaginationIsBounded(test *testing.T) {
 }
 
 func TestInjectedProviderHonorsCancellation(test *testing.T) {
-	for _, playlist := range []bool{false, true} {
+	for _, playlist := range []bool{
+		false,
+		true,
+	} {
 		test.Run(fmt.Sprint(playlist), func(test *testing.T) {
 			started := make(chan struct{})
 			transport := retryTransport(func(request *http.Request) (*http.Response, error) {
@@ -97,8 +100,8 @@ func TestInjectedProviderHonorsCancellation(test *testing.T) {
 
 				return nil, request.Context().Err()
 			})
-			network := &http.Client{Transport: transport}
-			reader := client.New(network)
+			httpClient := &http.Client{Transport: transport}
+			reader := client.New(httpClient)
 			provider := newClient(reader)
 			operationContext, cancel := context.WithCancel(context.Background())
 			result := make(chan error, 1)

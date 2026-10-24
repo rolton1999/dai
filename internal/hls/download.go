@@ -75,13 +75,13 @@ func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage {
 }
 
 func newLoadStage() pipeline.ProcessStage {
-	network := client.NewDoer()
+	httpClient := client.NewStreamingClient()
 
 	return pipeline.NewProcessStage(func(meta segmentMeta) (segmentLoadResult, error) {
 		operationContext, cancel := context.WithTimeout(context.Background(), segmentDownloadTimeout)
 		defer cancel()
 
-		err := downloadSegment(operationContext, network, meta, waitForSegmentRetry)
+		err := downloadSegment(operationContext, httpClient, meta, waitForSegmentRetry)
 		if err != nil {
 			return segmentLoadResult{segmentIndex: meta.index, err: err}, err
 		}

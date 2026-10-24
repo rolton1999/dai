@@ -34,7 +34,11 @@ func (body *masterStatusBody) Close() error {
 }
 
 func TestMasterRejectsHTTPErrorBeforeParsing(test *testing.T) {
-	for _, status := range []int{http.StatusOK, http.StatusNotFound, http.StatusServiceUnavailable} {
+	for _, status := range []int{
+		http.StatusOK,
+		http.StatusNotFound,
+		http.StatusServiceUnavailable,
+	} {
 		test.Run(http.StatusText(status), func(test *testing.T) {
 			originalClient := http.DefaultClient
 

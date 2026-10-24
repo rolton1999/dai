@@ -29,7 +29,13 @@ func TestMasterPlaylistParsesFlexibleHeaders(test *testing.T) {
 		test.Fatal(err)
 	}
 
-	for _, body := range []string{masterFixtureBody, strings.ReplaceAll(masterFixtureBody, "\n", "\r\n"), strings.TrimSpace(masterFixtureBody), strings.Replace(masterFixtureBody, "../media.m3u8", "\n# variant comment\n../media.m3u8", 1), masterMinimalBody} {
+	for _, body := range []string{
+		masterFixtureBody,
+		strings.ReplaceAll(masterFixtureBody, "\n", "\r\n"),
+		strings.TrimSpace(masterFixtureBody),
+		strings.Replace(masterFixtureBody, "../media.m3u8", "\n# variant comment\n../media.m3u8", 1),
+		masterMinimalBody,
+	} {
 		variants, err := parseMasterPlaylist(body, baseURL)
 		if err != nil || len(variants) != 1 {
 			test.Fatalf(masterInvalidResultFormat, variants, err)
@@ -91,17 +97,34 @@ func TestBestVariantSelection(test *testing.T) {
 	faster.bandwidth = higherBandwidth
 	square := VariantPlaylist{resolution: Resolution{width: squareDimension, height: squareDimension}, bandwidth: masterBandwidth}
 
-	best, err := GetPlaylistWithBestResolution([]VariantPlaylist{first, faster})
+	best, err := GetPlaylistWithBestResolution([]VariantPlaylist{
+		first,
+		faster,
+	})
 	if err != nil || best.bandwidth != higherBandwidth {
 		test.Fatalf(masterInvalidResultFormat, best, err)
 	}
 
-	best, err = GetPlaylistWithBestResolution([]VariantPlaylist{first, square})
+	best, err = GetPlaylistWithBestResolution([]VariantPlaylist{
+		first,
+		square,
+	})
 	if err != nil || best.resolution != square.resolution {
 		test.Fatalf(masterInvalidResultFormat, best, err)
 	}
 
-	for _, variants := range [][]VariantPlaylist{nil, {{}}, {first, {resolution: Resolution{width: smallerDimension}}}, {first, {resolution: Resolution{width: maximumDimension + 1, height: masterHeight}}}} {
+	for _, variants := range [][]VariantPlaylist{
+		nil,
+		{{}},
+		{
+			first,
+			{resolution: Resolution{width: smallerDimension}},
+		},
+		{
+			first,
+			{resolution: Resolution{width: maximumDimension + 1, height: masterHeight}},
+		},
+	} {
 		if _, err := GetPlaylistWithBestResolution(variants); err == nil {
 			test.Fatal("accepted empty variants or invalid dimensions")
 		}

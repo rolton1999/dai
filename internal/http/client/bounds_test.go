@@ -54,7 +54,10 @@ func TestReadClosesBodyOnTruncationAndReadFailure(test *testing.T) {
 	shortReader := strings.NewReader(fixtureShortBody)
 
 	failureReader := boundsFailureReader{failure: io.ErrUnexpectedEOF}
-	for _, reader := range []io.Reader{shortReader, failureReader} {
+	for _, reader := range []io.Reader{
+		shortReader,
+		failureReader,
+	} {
 		body := &trackedBody{Reader: reader}
 		doer := &boundsDoer{body: body, length: int64(len(fixtureBody))}
 		client := New(doer)
@@ -94,7 +97,10 @@ func TestReadLimitsUnknownLengthBody(test *testing.T) {
 }
 
 func TestReadCancelsStalledHeadersAndBodies(test *testing.T) {
-	for _, path := range []string{fixtureHeaderStallPath, fixtureBodyStallPath} {
+	for _, path := range []string{
+		fixtureHeaderStallPath,
+		fixtureBodyStallPath,
+	} {
 		test.Run(path, func(test *testing.T) {
 			started := make(chan struct{})
 			finished := make(chan struct{})

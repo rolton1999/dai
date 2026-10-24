@@ -22,28 +22,33 @@ const (
 	missingResponseError = "HTTP client returned an empty response"
 )
 
-type Doer interface {
+// StreamingClient returns responses with streaming bodies. Callers must close each body.
+// Do matches net/http.Client so standard clients and test transports can be used directly.
+type StreamingClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
 type Response struct {
 	Body []byte
-	URL  *url.URL
+
+	// URL is the final response URL after redirects, used to resolve relative
+	// playlist entries and pagination links against the location that served them.
+	URL *url.URL
 }
 
 type Client interface {
 	Read(context.Context, string) (Response, error)
 }
 
-func New(doer Doer) Client {
-	if doer == nil {
-		doer = NewDoer()
+func New(httpClient StreamingClient) Client {
+	if httpClient == nil {
+		httpClient = NewStreamingClient()
 	}
 
-	return &clientImpl{doer: doer}
+	return &clientImpl{httpClient: httpClient}
 }
 
-func NewDoer() Doer {
+func NewStreamingClient() StreamingClient {
 	client := *http.DefaultClient
 	if client.Timeout <= 0 || client.Timeout > requestTimeout {
 		client.Timeout = requestTimeout
@@ -66,7 +71,7 @@ func NewDoer() Doer {
 }
 
 type clientImpl struct {
-	doer Doer
+	httpClient StreamingClient
 }
 
 func (client *clientImpl) Read(operationContext context.Context, link string) (Response, error) {
@@ -87,7 +92,7 @@ func (client *clientImpl) Read(operationContext context.Context, link string) (R
 		return Response{}, err
 	}
 
-	response, err := client.doer.Do(request)
+	response, err := client.httpClient.Do(request)
 	if err != nil {
 		if response != nil && response.Body != nil {
 			_ = response.Body.Close()

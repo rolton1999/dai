@@ -57,7 +57,11 @@ func installStatusTransport(test *testing.T, transport http.RoundTripper) {
 }
 
 func TestVideoRejectsHTTPErrorBeforeParsing(test *testing.T) {
-	for _, status := range []int{http.StatusOK, http.StatusNotFound, http.StatusServiceUnavailable} {
+	for _, status := range []int{
+		http.StatusOK,
+		http.StatusNotFound,
+		http.StatusServiceUnavailable,
+	} {
 		test.Run(http.StatusText(status), func(test *testing.T) {
 			body := newStatusBody(retryVideoBody)
 			transport := retryTransport(func(request *http.Request) (*http.Response, error) {
@@ -82,9 +86,17 @@ func TestVideoRejectsHTTPErrorBeforeParsing(test *testing.T) {
 }
 
 func TestPlaylistRejectsHTTPErrorAtEveryEndpoint(test *testing.T) {
-	for _, endpoint := range []string{retryPlaylistTitlePath, retryPlaylistVideosPath, retryPlaylistSecondPath} {
+	for _, endpoint := range []string{
+		retryPlaylistTitlePath,
+		retryPlaylistVideosPath,
+		retryPlaylistSecondPath,
+	} {
 		test.Run(endpoint, func(test *testing.T) {
-			for _, status := range []int{http.StatusOK, http.StatusNotFound, http.StatusServiceUnavailable} {
+			for _, status := range []int{
+				http.StatusOK,
+				http.StatusNotFound,
+				http.StatusServiceUnavailable,
+			} {
 				test.Run(http.StatusText(status), func(test *testing.T) {
 					bodies := make([]*statusResponseBody, 0)
 

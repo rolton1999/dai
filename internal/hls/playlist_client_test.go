@@ -39,8 +39,8 @@ func TestInjectedMediaReaderUsesFinalURLAndClosesBody(test *testing.T) {
 
 		return response, nil
 	})
-	network := &http.Client{Transport: transport}
-	reader := client.New(network)
+	httpClient := &http.Client{Transport: transport}
+	reader := client.New(httpClient)
 	playlist := VariantPlaylist{Link: injectedMediaURL}
 
 	segments, err := collectSegmentMetasOnce(context.Background(), reader, playlist, "", injectedFilePrefix)
@@ -57,8 +57,8 @@ func TestInjectedMasterReaderHonorsCancellation(test *testing.T) {
 
 		return nil, request.Context().Err()
 	})
-	network := &http.Client{Transport: transport}
-	reader := client.New(network)
+	httpClient := &http.Client{Transport: transport}
+	reader := client.New(httpClient)
 	client := newPlaylistClient(reader)
 	operationContext, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)

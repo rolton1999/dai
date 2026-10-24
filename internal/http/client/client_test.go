@@ -47,7 +47,10 @@ func (body *trackedBody) Close() error {
 }
 
 func TestReadClosesResponse(test *testing.T) {
-	for _, status := range []int{http.StatusOK, http.StatusNotFound} {
+	for _, status := range []int{
+		http.StatusOK,
+		http.StatusNotFound,
+	} {
 		test.Run(http.StatusText(status), func(test *testing.T) {
 			reader := strings.NewReader(fixtureBody)
 			body := &trackedBody{Reader: reader}

@@ -42,7 +42,11 @@ func (body segmentTestBody) Close() error {
 }
 
 func TestSegmentDownloadRetriesTransientFailures(test *testing.T) {
-	for _, failure := range []string{"unexpected EOF", "HTTP 502", "short content length"} {
+	for _, failure := range []string{
+		"unexpected EOF",
+		"HTTP 502",
+		"short content length",
+	} {
 		test.Run(failure, func(test *testing.T) {
 			attempts := 0
 			closedBodies := 0
@@ -143,7 +147,10 @@ func TestSegmentDownloadExhaustsRetriesAndRemovesPartialFile(test *testing.T) {
 }
 
 func TestSegmentDownloadDoesNotRetryPermanentFailures(test *testing.T) {
-	for _, failure := range []string{"HTTP 404", "file creation"} {
+	for _, failure := range []string{
+		"HTTP 404",
+		"file creation",
+	} {
 		test.Run(failure, func(test *testing.T) {
 			attempts := 0
 			meta := segmentMeta{link: segmentTestURL, fileName: filepath.Join(test.TempDir(), segmentTestFileName)}

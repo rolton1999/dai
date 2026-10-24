@@ -82,7 +82,13 @@ func TestVideoMetadataRequiresTitleAndUsablePlaylistURL(test *testing.T) {
 		}
 	}
 
-	for _, body := range []string{metadataEmptyObject, metadataNullObject, metadataMalformedJSON, metadataMissingBalancer, metadataMissingVideoTitle} {
+	for _, body := range []string{
+		metadataEmptyObject,
+		metadataNullObject,
+		metadataMalformedJSON,
+		metadataMissingBalancer,
+		metadataMissingVideoTitle,
+	} {
 		reader := strings.NewReader(body)
 		if _, err := parseVideoInfoFromVideoApiResponse(reader); err == nil {
 			test.Errorf(metadataAcceptedInvalidFormat, body)
@@ -91,7 +97,12 @@ func TestVideoMetadataRequiresTitleAndUsablePlaylistURL(test *testing.T) {
 }
 
 func TestPlaylistMetadataRequiresNonblankTitle(test *testing.T) {
-	for _, body := range []string{metadataEmptyObject, metadataNullObject, metadataMalformedJSON, fmt.Sprintf(metadataTitleTemplate, metadataBlankText)} {
+	for _, body := range []string{
+		metadataEmptyObject,
+		metadataNullObject,
+		metadataMalformedJSON,
+		fmt.Sprintf(metadataTitleTemplate, metadataBlankText),
+	} {
 		reader := strings.NewReader(body)
 		if _, err := parseTitleFromPlaylistApiResponse(reader); err == nil {
 			test.Errorf(metadataAcceptedInvalidFormat, body)
@@ -107,14 +118,28 @@ func TestPlaylistMetadataRequiresNonblankTitle(test *testing.T) {
 }
 
 func TestPlaylistPagesRequireResultsIDsAndContinuation(test *testing.T) {
-	for _, body := range []string{metadataEmptyObject, metadataNullObject, metadataMalformedJSON, metadataNullResults, metadataMissingVideoID, metadataEmptyVideoID, metadataBlankVideoID, metadataMissingNext, metadataBlankNext} {
+	for _, body := range []string{
+		metadataEmptyObject,
+		metadataNullObject,
+		metadataMalformedJSON,
+		metadataNullResults,
+		metadataMissingVideoID,
+		metadataEmptyVideoID,
+		metadataBlankVideoID,
+		metadataMissingNext,
+		metadataBlankNext,
+	} {
 		reader := strings.NewReader(body)
 		if _, _, err := parseVideoIDsFromPlaylistApiResponse(reader); err == nil {
 			test.Errorf(metadataAcceptedInvalidFormat, body)
 		}
 	}
 
-	for _, body := range []string{metadataEmptyPage, metadataFinalPage, retryPlaylistFirstPage} {
+	for _, body := range []string{
+		metadataEmptyPage,
+		metadataFinalPage,
+		retryPlaylistFirstPage,
+	} {
 		reader := strings.NewReader(body)
 
 		ids, next, err := parseVideoIDsFromPlaylistApiResponse(reader)
@@ -147,7 +172,10 @@ func TestVideoMetadataPreservesReadError(test *testing.T) {
 }
 
 func TestHTTP200ErrorJSONIsNotSuccessfulMetadata(test *testing.T) {
-	for _, playlist := range []bool{false, true} {
+	for _, playlist := range []bool{
+		false,
+		true,
+	} {
 		name := metadataVideoCaseName
 		if playlist {
 			name = metadataPlaylistCaseName

@@ -164,7 +164,14 @@ func parseSegmentMetas(body string, baseURL *url.URL, filePrefix string) ([]segm
 			continue
 		}
 
-		for _, unsupported := range []string{byteRangeTag, mapTag, partTag, skipTag, streamTag, iFramesOnlyTag} {
+		for _, unsupported := range []string{
+			byteRangeTag,
+			mapTag,
+			partTag,
+			skipTag,
+			streamTag,
+			iFramesOnlyTag,
+		} {
 			if strings.HasPrefix(line, unsupported) {
 				return nil, errors.New(unsupportedMediaPlaylistFeatureMessage)
 			}
