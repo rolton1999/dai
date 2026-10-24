@@ -18,7 +18,7 @@ Calculate the reference checksums manually from verified downloads, arranged in
 
 ```sh
 cd /path/to/verified-downloads
-shasum -a 256 single/*.mp4 playlist/*.mp4 > /path/to/dai/e2e/checksums.sha256
+shasum -a 256 single/*.mp4 playlist/*.mp4 > /path/to/dai/tests/e2e/checksums.sha256
 ```
 
 The script never generates or updates reference checksums. Use the same FFmpeg
