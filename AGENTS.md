@@ -90,6 +90,19 @@ tracked in `bugs.md` until implementation and tests are complete.
   }
   ```
 
+- Write function and method bodies on separate lines. Put each statement on its
+  own line and the closing brace on its own line; do not use one-line bodies or
+  semicolon-separated statements. Apply this rule to anonymous functions,
+  callbacks, test doubles and empty functions too. Separate function declarations
+  with a blank line.
+
+  ```go
+  func (body *masterStatusBody) Close() error {
+      body.closed = true
+      return nil
+  }
+  ```
+
 - Export the behavior callers need through small interfaces. Keep concrete
   implementations unexported and return an interface from exported constructors.
   Configuration structs, shared protocol/data structs, sentinel errors and

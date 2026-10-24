@@ -14,7 +14,9 @@ const retryMasterBody = "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1000,
 func TestMasterPlaylistRetriesInterruptedBody(test *testing.T) {
 	originalClient := http.DefaultClient
 
-	test.Cleanup(func() { http.DefaultClient = originalClient })
+	test.Cleanup(func() {
+		http.DefaultClient = originalClient
+	})
 
 	attempts := 0
 	transport := fixtureTransport(func(request *http.Request) (*http.Response, error) {

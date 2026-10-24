@@ -84,7 +84,9 @@ func collectSegmentMetasOnce(
 		return nil, fmt.Errorf(mediaPlaylistRequestError, err)
 	}
 
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf(mediaPlaylistStatusError, response.StatusCode)

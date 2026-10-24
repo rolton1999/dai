@@ -57,7 +57,9 @@ func getVideoInfo(operationContext context.Context, videoID string) (VideoInfo, 
 		return VideoInfo{}, fmt.Errorf("cannot get play/options: %w", err)
 	}
 
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 
 	if response.StatusCode != http.StatusOK {
 		return VideoInfo{}, fmt.Errorf(metadataHTTPStatusErrorFormat, response.StatusCode)

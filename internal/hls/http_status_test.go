@@ -28,14 +28,19 @@ func (body *masterStatusBody) Read(destination []byte) (int, error) {
 	return body.reader.Read(destination)
 }
 
-func (body *masterStatusBody) Close() error { body.closed = true; return nil }
+func (body *masterStatusBody) Close() error {
+	body.closed = true
+	return nil
+}
 
 func TestMasterRejectsHTTPErrorBeforeParsing(test *testing.T) {
 	for _, status := range []int{http.StatusOK, http.StatusNotFound, http.StatusServiceUnavailable} {
 		test.Run(http.StatusText(status), func(test *testing.T) {
 			originalClient := http.DefaultClient
 
-			test.Cleanup(func() { http.DefaultClient = originalClient })
+			test.Cleanup(func() {
+				http.DefaultClient = originalClient
+			})
 
 			reader := strings.NewReader(masterFixtureBody)
 			body := &masterStatusBody{reader: reader}

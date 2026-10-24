@@ -66,7 +66,9 @@ func getVariantPlaylists(operationContext context.Context, masterPlaylistLink st
 		return nil, fmt.Errorf(masterRequestErrorFormat, err)
 	}
 
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf(masterHTTPStatusErrorFormat, response.StatusCode)

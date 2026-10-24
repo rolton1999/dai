@@ -119,7 +119,10 @@ type masterBody struct {
 	closed bool
 }
 
-func (body *masterBody) Close() error { body.closed = true; return nil }
+func (body *masterBody) Close() error {
+	body.closed = true
+	return nil
+}
 
 func TestMasterPlaylistResolvesAfterRedirect(test *testing.T) {
 	const (
@@ -130,7 +133,9 @@ func TestMasterPlaylistResolvesAfterRedirect(test *testing.T) {
 
 	originalClient := http.DefaultClient
 
-	test.Cleanup(func() { http.DefaultClient = originalClient })
+	test.Cleanup(func() {
+		http.DefaultClient = originalClient
+	})
 
 	bodyReader := strings.NewReader(masterFixtureBody)
 	body := &masterBody{Reader: bodyReader}

@@ -30,7 +30,9 @@ func (transport retryTransport) RoundTrip(request *http.Request) (*http.Response
 func TestVideoInfoRetriesInterruptedResponse(test *testing.T) {
 	originalClient := http.DefaultClient
 
-	test.Cleanup(func() { http.DefaultClient = originalClient })
+	test.Cleanup(func() {
+		http.DefaultClient = originalClient
+	})
 
 	attempts := 0
 	transport := retryTransport(func(request *http.Request) (*http.Response, error) {
@@ -64,7 +66,9 @@ func TestPlaylistRetryDoesNotDuplicateEarlierPages(test *testing.T) {
 
 	originalClient := http.DefaultClient
 
-	test.Cleanup(func() { http.DefaultClient = originalClient })
+	test.Cleanup(func() {
+		http.DefaultClient = originalClient
+	})
 
 	secondPageAttempts := 0
 	transport := retryTransport(func(request *http.Request) (*http.Response, error) {

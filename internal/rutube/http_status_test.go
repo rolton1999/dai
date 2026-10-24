@@ -34,7 +34,10 @@ func (body *statusResponseBody) Read(destination []byte) (int, error) {
 	return body.reader.Read(destination)
 }
 
-func (body *statusResponseBody) Close() error { body.closed = true; return nil }
+func (body *statusResponseBody) Close() error {
+	body.closed = true
+	return nil
+}
 
 func newStatusBody(contents string) *statusResponseBody {
 	reader := strings.NewReader(contents)
@@ -46,7 +49,9 @@ func installStatusTransport(test *testing.T, transport http.RoundTripper) {
 
 	originalClient := http.DefaultClient
 
-	test.Cleanup(func() { http.DefaultClient = originalClient })
+	test.Cleanup(func() {
+		http.DefaultClient = originalClient
+	})
 
 	http.DefaultClient = &http.Client{Transport: transport}
 }
