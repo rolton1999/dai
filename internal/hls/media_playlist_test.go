@@ -39,6 +39,7 @@ func TestMediaPlaylistAcceptsCompleteUnencryptedInput(test *testing.T) {
 		}
 	}
 }
+
 func TestMediaPlaylistRejectsUnsupportedFeatures(test *testing.T) {
 	baseURL, err := url.Parse(mediaFixtureURL)
 	if err != nil {
@@ -63,6 +64,7 @@ func TestMediaPlaylistRejectsUnsupportedFeatures(test *testing.T) {
 		}
 	}
 }
+
 func TestMediaPlaylistRejectsIncompleteAndMalformedInput(test *testing.T) {
 	baseURL, err := url.Parse(mediaFixtureURL)
 	if err != nil {
@@ -93,6 +95,7 @@ func TestMediaPlaylistRejectsIncompleteAndMalformedInput(test *testing.T) {
 		test.Error("accepted missing base URL")
 	}
 }
+
 func FuzzMediaPlaylist(fuzzer *testing.F) {
 	fuzzer.Add(mediaFixtureBody)
 	fuzzer.Add("")

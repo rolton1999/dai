@@ -32,9 +32,14 @@ func (transport fixtureTransport) RoundTrip(request *http.Request) (*http.Respon
 
 type silentLogger struct{}
 
-func (silentLogger) NewPrefix(string)        {}
-func (silentLogger) UpdateWithSuffix(string) {}
-func (silentLogger) PrintNewLine()           {}
+func (silentLogger) NewPrefix(string) {
+}
+
+func (silentLogger) UpdateWithSuffix(string) {
+}
+
+func (silentLogger) PrintNewLine() {
+}
 
 type interruptedSegmentReader struct{}
 
@@ -173,7 +178,9 @@ func setFixtureClient(test *testing.T, playlist string, segmentStatus int) *atom
 
 	originalClient := http.DefaultClient
 
-	test.Cleanup(func() { http.DefaultClient = originalClient })
+	test.Cleanup(func() {
+		http.DefaultClient = originalClient
+	})
 
 	unexpectedRequests := &atomic.Int32{}
 	transport := fixtureTransport(func(request *http.Request) (*http.Response, error) {

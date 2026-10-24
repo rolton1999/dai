@@ -66,7 +66,9 @@ func downloadSegmentAttempt(operationContext context.Context, client *http.Clien
 		return retryableSegmentTransfer(err), err
 	}
 
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 
 	if response.StatusCode != http.StatusOK {
 		retry := response.StatusCode == http.StatusRequestTimeout ||

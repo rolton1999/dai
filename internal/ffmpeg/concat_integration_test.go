@@ -37,8 +37,12 @@ type fixtureLogger struct {
 	suffixes []string
 }
 
-func (*fixtureLogger) NewPrefix(string) {}
-func (*fixtureLogger) PrintNewLine()    {}
+func (*fixtureLogger) NewPrefix(string) {
+}
+
+func (*fixtureLogger) PrintNewLine() {
+}
+
 func (logger *fixtureLogger) UpdateWithSuffix(suffix string) {
 	logger.suffixes = append(logger.suffixes, suffix)
 }

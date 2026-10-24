@@ -19,10 +19,10 @@ test:
 e2e: e2e-single e2e-playlist
 
 e2e-single: build
-	bash ./e2e/run.sh single
+	bash ./tests/e2e/run.sh single
 
 e2e-playlist: build
-	bash ./e2e/run.sh playlist
+	bash ./tests/e2e/run.sh playlist
 
 clean:
 	rm -rf *.mp4 *.json 

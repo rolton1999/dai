@@ -2,7 +2,7 @@
 set -euo pipefail
 
 script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-project_directory="$(dirname "$script_directory")"
+project_directory="$(cd "$script_directory/../.." && pwd)"
 checksum_file="$script_directory/checksums.sha256"
 single_url='https://rutube.ru/video/dace2feac379872d42e49b6b25c0587a/'
 playlist_url='https://rutube.ru/plst/1840659/'
