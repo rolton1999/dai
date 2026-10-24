@@ -17,7 +17,7 @@ func TestMasterPlaylistRetriesInterruptedBody(test *testing.T) {
 	test.Cleanup(func() { http.DefaultClient = originalClient })
 
 	attempts := 0
-	http.DefaultClient = &http.Client{Transport: fixtureTransport(func(request *http.Request) (*http.Response, error) {
+	transport := fixtureTransport(func(request *http.Request) (*http.Response, error) {
 		attempts++
 
 		var body io.Reader = strings.NewReader(retryMasterBody)
@@ -25,8 +25,17 @@ func TestMasterPlaylistRetriesInterruptedBody(test *testing.T) {
 			body = interruptedSegmentReader{}
 		}
 
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(body), Request: request}, nil
-	})}
+		responseBody := io.NopCloser(body)
+		response := &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       responseBody,
+			Request:    request,
+		}
+
+		return response, nil
+	})
+
+	http.DefaultClient = &http.Client{Transport: transport}
 
 	playlists, err := hls.GetVariantPlaylists(fixtureOrigin)
 	if err != nil || len(playlists) != 1 || attempts != 2 {
@@ -43,7 +52,14 @@ func TestMediaPlaylistRetriesInterruptedBody(test *testing.T) {
 		if request.URL.Path == fixturePlaylistPath {
 			attempts++
 			if attempts == 1 {
-				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(interruptedSegmentReader{}), Request: request}, nil
+				responseBody := io.NopCloser(interruptedSegmentReader{})
+				response := &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       responseBody,
+					Request:    request,
+				}
+
+				return response, nil
 			}
 		}
 

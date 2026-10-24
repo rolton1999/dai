@@ -58,7 +58,9 @@ tracked in `bugs.md` until implementation and tests are complete.
 - Do not nest constructor or factory calls inside other constructor or factory
   calls. Create each dependency in a descriptive local variable first, then pass
   that variable to the outer constructor. Apply this rule to production code,
-  tests and standard-library wrappers such as readers and closers.
+  tests and standard-library wrappers such as readers and closers. Constructor
+  and factory calls must also stay outside struct literal field values: construct
+  each dependency first, then assign it to the field.
 
   Avoid:
 
@@ -71,6 +73,21 @@ tracked in `bugs.md` until implementation and tests are complete.
   ```go
   dependency := other.New()
   service := some.New(dependency)
+  ```
+
+  The same rule applies to struct literals. Avoid:
+
+  ```go
+  response := &http.Response{Body: io.NopCloser(bodyReader)}
+  ```
+
+  Prefer:
+
+  ```go
+  responseBody := io.NopCloser(bodyReader)
+  response := &http.Response{
+      Body: responseBody,
+  }
   ```
 
 - Export the behavior callers need through small interfaces. Keep concrete

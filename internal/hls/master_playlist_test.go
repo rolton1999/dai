@@ -129,19 +129,36 @@ func TestMasterPlaylistResolvesAfterRedirect(test *testing.T) {
 
 	test.Cleanup(func() { http.DefaultClient = originalClient })
 
-	body := &masterBody{Reader: strings.NewReader(masterFixtureBody)}
-	http.DefaultClient = &http.Client{Transport: masterTransport(func(request *http.Request) (*http.Response, error) {
+	bodyReader := strings.NewReader(masterFixtureBody)
+	body := &masterBody{Reader: bodyReader}
+	transport := masterTransport(func(request *http.Request) (*http.Response, error) {
 		if request.URL.Path == redirectPath {
 			bodyReader := strings.NewReader("")
-			return &http.Response{StatusCode: http.StatusFound, Header: http.Header{locationHeader: []string{masterFixtureURL}}, Body: io.NopCloser(bodyReader), Request: request}, nil
+			responseBody := io.NopCloser(bodyReader)
+			response := &http.Response{
+				StatusCode: http.StatusFound,
+				Header:     http.Header{locationHeader: []string{masterFixtureURL}},
+				Body:       responseBody,
+				Request:    request,
+			}
+
+			return response, nil
 		}
 
 		if request.URL.Path != finalPath {
 			test.Errorf("unexpected request: %s", request.URL)
 		}
 
-		return &http.Response{StatusCode: http.StatusOK, Body: body, Request: request}, nil
-	})}
+		response := &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       body,
+			Request:    request,
+		}
+
+		return response, nil
+	})
+
+	http.DefaultClient = &http.Client{Transport: transport}
 
 	variants, err := GetVariantPlaylists("https://cdn.example.test" + redirectPath)
 	if err != nil || len(variants) != 1 || variants[0].Link != masterResolvedVariant {

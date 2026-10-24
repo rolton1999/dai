@@ -113,7 +113,14 @@ func TestDownloadTSFilesRecoversInterruptedSegment(test *testing.T) {
 			partialReader := strings.NewReader(partialBody)
 			body := io.MultiReader(partialReader, interruptedSegmentReader{})
 
-			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(body), Request: request}, nil
+			responseBody := io.NopCloser(body)
+			response := &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       responseBody,
+				Request:    request,
+			}
+
+			return response, nil
 		}
 
 		return transport.RoundTrip(request)
@@ -169,7 +176,7 @@ func setFixtureClient(test *testing.T, playlist string, segmentStatus int) *atom
 	test.Cleanup(func() { http.DefaultClient = originalClient })
 
 	unexpectedRequests := &atomic.Int32{}
-	http.DefaultClient = &http.Client{Transport: fixtureTransport(func(request *http.Request) (*http.Response, error) {
+	transport := fixtureTransport(func(request *http.Request) (*http.Response, error) {
 		statusCode := http.StatusOK
 
 		var body string
@@ -191,8 +198,17 @@ func setFixtureClient(test *testing.T, playlist string, segmentStatus int) *atom
 
 		bodyReader := strings.NewReader(body)
 
-		return &http.Response{StatusCode: statusCode, Body: io.NopCloser(bodyReader), Request: request}, nil
-	})}
+		responseBody := io.NopCloser(bodyReader)
+		response := &http.Response{
+			StatusCode: statusCode,
+			Body:       responseBody,
+			Request:    request,
+		}
+
+		return response, nil
+	})
+
+	http.DefaultClient = &http.Client{Transport: transport}
 
 	return unexpectedRequests
 }
