@@ -196,3 +196,35 @@ func setFixtureClient(test *testing.T, playlist string, segmentStatus int) *atom
 
 	return unexpectedRequests
 }
+
+func TestDownloadTSFilesRejectsEncryptionBeforeSegmentRequests(test *testing.T) {
+	const (
+		header        = "#EXTM3U\n"
+		encryptionTag = "#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n"
+	)
+
+	playlist := strings.Replace(fixtureMinimalPlaylist, header, header+encryptionTag, 1)
+	setFixtureClient(test, playlist, http.StatusOK)
+
+	originalTransport := http.DefaultClient.Transport
+
+	var segmentRequests atomic.Int32
+
+	http.DefaultClient.Transport = fixtureTransport(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path != fixturePlaylistPath {
+			segmentRequests.Add(1)
+		}
+
+		return originalTransport.RoundTrip(request)
+	})
+
+	files, err := hls.DownloadTSFiles(silentLogger{}, fixtureOutputName, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
+	if err == nil || files != nil || segmentRequests.Load() != 0 {
+		test.Fatalf("files=%v error=%v segment requests=%d", files, err, segmentRequests.Load())
+	}
+
+	artifacts, err := os.ReadDir(os.Getenv(fixtureTemporaryDirectoryKey))
+	if err != nil || len(artifacts) != 0 {
+		test.Fatalf("temporary artifacts=%v error=%v", artifacts, err)
+	}
+}
