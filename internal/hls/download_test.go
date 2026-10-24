@@ -110,7 +110,9 @@ func TestDownloadTSFilesRecoversInterruptedSegment(test *testing.T) {
 	attempts := atomic.Int32{}
 	http.DefaultClient.Transport = fixtureTransport(func(request *http.Request) (*http.Response, error) {
 		if request.URL.Path == fixtureFirstSegmentPath && attempts.Add(1) == 1 {
-			body := io.MultiReader(strings.NewReader(partialBody), interruptedSegmentReader{})
+			partialReader := strings.NewReader(partialBody)
+			body := io.MultiReader(partialReader, interruptedSegmentReader{})
+
 			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(body), Request: request}, nil
 		}
 
@@ -187,7 +189,9 @@ func setFixtureClient(test *testing.T, playlist string, segmentStatus int) *atom
 			statusCode = http.StatusBadGateway
 		}
 
-		return &http.Response{StatusCode: statusCode, Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
+		bodyReader := strings.NewReader(body)
+
+		return &http.Response{StatusCode: statusCode, Body: io.NopCloser(bodyReader), Request: request}, nil
 	})}
 
 	return unexpectedRequests

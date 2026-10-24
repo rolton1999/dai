@@ -55,6 +55,11 @@ tracked in `bugs.md` until implementation and tests are complete.
   Apply this rule to named and anonymous structs in production code and tests;
   empty structs may remain `struct{}`.
 
+- Do not nest constructor or factory calls inside other constructor or factory
+  calls. Create each dependency in a descriptive local variable first, then pass
+  that variable to the outer constructor. Apply this rule to production code,
+  tests and standard-library wrappers such as readers and closers.
+
 - Export the behavior callers need through small interfaces. Keep concrete
   implementations unexported and return an interface from exported constructors.
   Configuration structs, shared protocol/data structs, sentinel errors and

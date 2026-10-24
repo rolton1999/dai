@@ -39,7 +39,9 @@ func TestVideoInfoRetriesInterruptedResponse(test *testing.T) {
 			return nil, &net.DNSError{Err: retryTimeoutMessage, IsTimeout: true}
 		}
 
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(retryVideoBody)), Request: request}, nil
+		bodyReader := strings.NewReader(retryVideoBody)
+
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bodyReader), Request: request}, nil
 	})}
 
 	info, err := GetVideoInfo(retryVideoID)
@@ -75,7 +77,9 @@ func TestPlaylistRetryDoesNotDuplicateEarlierPages(test *testing.T) {
 			test.Fatalf("unexpected request: %s", request.URL.Path)
 		}
 
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
+		bodyReader := strings.NewReader(body)
+
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bodyReader), Request: request}, nil
 	})}
 
 	info, err := GetPlaylistInfo(retryPlaylistID)

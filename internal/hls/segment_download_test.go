@@ -59,7 +59,8 @@ func TestSegmentDownloadRetriesTransientFailures(test *testing.T) {
 				if attempts == 1 {
 					switch failure {
 					case "unexpected EOF":
-						reader = io.MultiReader(strings.NewReader(segmentTestPartialBody), segmentTestReadFailure{})
+						partialReader := strings.NewReader(segmentTestPartialBody)
+						reader = io.MultiReader(partialReader, segmentTestReadFailure{})
 					case "HTTP 502":
 						response.StatusCode = http.StatusBadGateway
 					case "short content length":
@@ -100,7 +101,10 @@ func TestSegmentDownloadExhaustsRetriesAndRemovesPartialFile(test *testing.T) {
 	meta := segmentMeta{link: segmentTestURL, fileName: filepath.Join(test.TempDir(), segmentTestFileName)}
 	client := &http.Client{Transport: segmentTestTransport(func(request *http.Request) (*http.Response, error) {
 		attempts++
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(io.MultiReader(strings.NewReader(segmentTestPartialBody), segmentTestReadFailure{})), Request: request}, nil
+		partialReader := strings.NewReader(segmentTestPartialBody)
+		combinedReader := io.MultiReader(partialReader, segmentTestReadFailure{})
+
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(combinedReader), Request: request}, nil
 	})}
 	wait := func(_ context.Context, delay time.Duration) error {
 		delays = append(delays, delay)
@@ -141,7 +145,9 @@ func TestSegmentDownloadDoesNotRetryPermanentFailures(test *testing.T) {
 
 			client := &http.Client{Transport: segmentTestTransport(func(request *http.Request) (*http.Response, error) {
 				attempts++
-				return &http.Response{StatusCode: statusCode, Body: io.NopCloser(strings.NewReader(segmentTestCompleteBody)), Request: request}, nil
+				bodyReader := strings.NewReader(segmentTestCompleteBody)
+
+				return &http.Response{StatusCode: statusCode, Body: io.NopCloser(bodyReader), Request: request}, nil
 			})}
 			wait := func(context.Context, time.Duration) error {
 				test.Fatal("permanent failure scheduled a retry")
@@ -163,7 +169,9 @@ func TestSegmentDownloadCancelsDuringBackoff(test *testing.T) {
 	meta := segmentMeta{link: segmentTestURL, fileName: filepath.Join(test.TempDir(), segmentTestFileName)}
 	client := &http.Client{Transport: segmentTestTransport(func(request *http.Request) (*http.Response, error) {
 		attempts++
-		return &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
+		bodyReader := strings.NewReader("")
+
+		return &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(bodyReader), Request: request}, nil
 	})}
 	wait := func(operationContext context.Context, delay time.Duration) error {
 		cancel()

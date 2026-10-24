@@ -132,7 +132,8 @@ func TestMasterPlaylistResolvesAfterRedirect(test *testing.T) {
 	body := &masterBody{Reader: strings.NewReader(masterFixtureBody)}
 	http.DefaultClient = &http.Client{Transport: masterTransport(func(request *http.Request) (*http.Response, error) {
 		if request.URL.Path == redirectPath {
-			return &http.Response{StatusCode: http.StatusFound, Header: http.Header{locationHeader: []string{masterFixtureURL}}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
+			bodyReader := strings.NewReader("")
+			return &http.Response{StatusCode: http.StatusFound, Header: http.Header{locationHeader: []string{masterFixtureURL}}, Body: io.NopCloser(bodyReader), Request: request}, nil
 		}
 
 		if request.URL.Path != finalPath {
