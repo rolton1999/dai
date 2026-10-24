@@ -11,7 +11,7 @@ type metadataProvider interface {
 	Playlist(context.Context, string) (PlaylistInfo, error)
 }
 
-func newClient(reader client.Client) metadataProvider {
+func newMetadataProvider(reader client.Client) metadataProvider {
 	if reader == nil {
 		reader = client.New(nil)
 	}

@@ -102,7 +102,7 @@ func TestInjectedProviderHonorsCancellation(test *testing.T) {
 			})
 			httpClient := &http.Client{Transport: transport}
 			reader := client.New(httpClient)
-			provider := newClient(reader)
+			provider := newMetadataProvider(reader)
 			operationContext, cancel := context.WithCancel(context.Background())
 			result := make(chan error, 1)
 
@@ -185,7 +185,7 @@ func TestInjectedPlaylistResolvesRelativeNextAfterRedirect(test *testing.T) {
 	const expectedVideos = 2
 
 	reader := &relativePageReader{}
-	provider := newClient(reader)
+	provider := newMetadataProvider(reader)
 
 	info, err := provider.Playlist(context.Background(), retryPlaylistID)
 	if err != nil || len(info.VideoIDs) != expectedVideos || info.VideoIDs[0] != metadataFirstID {

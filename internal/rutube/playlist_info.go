@@ -36,7 +36,7 @@ func (pi PlaylistInfo) String() string {
 }
 
 func GetPlaylistInfo(playlistID string) (PlaylistInfo, error) {
-	provider := newClient(nil)
+	provider := newMetadataProvider(nil)
 	return provider.Playlist(context.Background(), playlistID)
 }
 
