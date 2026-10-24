@@ -52,7 +52,7 @@ func getVariantPlaylistsWithReader(
 		return nil, err
 	}
 
-	return parseMasterPlspaylist(string(response.Body), response.URL)
+	return parseMasterPlaylist(string(response.Body), response.URL)
 }
 
 func parseMasterPlaylist(body string, baseURL *url.URL) ([]VariantPlaylist, error) {
