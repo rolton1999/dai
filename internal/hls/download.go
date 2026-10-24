@@ -2,10 +2,10 @@ package hls
 
 import (
 	"context"
+	"dai/internal/httpclient"
 	"dai/internal/pipeline"
 	"dai/internal/progress"
 	"fmt"
-	"net/http"
 	"os"
 )
 
@@ -75,11 +75,13 @@ func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage {
 }
 
 func newLoadStage() pipeline.ProcessStage {
+	network := httpclient.NewDoer()
+
 	return pipeline.NewProcessStage(func(meta segmentMeta) (segmentLoadResult, error) {
 		operationContext, cancel := context.WithTimeout(context.Background(), segmentDownloadTimeout)
 		defer cancel()
 
-		err := downloadSegment(operationContext, http.DefaultClient, meta, waitForSegmentRetry)
+		err := downloadSegment(operationContext, network, meta, waitForSegmentRetry)
 		if err != nil {
 			return segmentLoadResult{segmentIndex: meta.index, err: err}, err
 		}

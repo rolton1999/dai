@@ -1,18 +1,26 @@
 package rutube
 
 import (
+	"bytes"
 	"context"
-	"dai/internal/retry"
+	"dai/internal/httpclient"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
 const (
-	metadataRequestTimeout        = 2 * time.Minute
-	metadataHTTPStatusErrorFormat = "cannot get Rutube metadata: HTTP %d"
+	metadataRequestTimeout         = 2 * time.Minute
+	metadataReadErrorFormat        = "cannot read body: %w"
+	metadataDecodeErrorFormat      = "cannot unmarshal body: %w"
+	videoMissingFieldsMessage      = "video metadata is missing title or playlist URL"
+	videoInvalidPlaylistURLMessage = "video metadata contains an invalid HTTP(S) playlist URL"
+	metadataHTTPScheme             = "http"
+	metadataHTTPSScheme            = "https"
 )
 
 type VideoInfo struct {
@@ -26,52 +34,38 @@ func (vi VideoInfo) String() string {
 }
 
 func GetVideoInfo(videoID string) (VideoInfo, error) {
-	operationContext, cancel := context.WithTimeout(context.Background(), metadataRequestTimeout)
-	defer cancel()
-
-	var result VideoInfo
-
-	err := retry.Do(operationContext, func(attemptContext context.Context) error {
-		var operationError error
-
-		result, operationError = getVideoInfo(attemptContext, videoID)
-
-		return operationError
-	})
-
-	return result, err
+	provider := New(nil)
+	return provider.Video(context.Background(), videoID)
 }
 
 func getVideoInfo(operationContext context.Context, videoID string) (VideoInfo, error) {
-	const template = "https://rutube.ru/api/play/options/%s/?format=json"
+	reader := httpclient.New(nil)
+	return getVideoInfoWithReader(operationContext, reader, videoID)
+}
 
-	url := fmt.Sprintf(template, videoID)
+func getVideoInfoWithReader(
+	operationContext context.Context,
+	reader httpclient.Client,
+	videoID string,
+) (VideoInfo, error) {
+	const videoAPI = "https://rutube.ru/api/play/options/%s/?format=json"
 
-	request, err := http.NewRequestWithContext(operationContext, http.MethodGet, url, nil)
+	link := fmt.Sprintf(videoAPI, url.PathEscape(videoID))
+
+	response, err := reader.Read(operationContext, link)
 	if err != nil {
 		return VideoInfo{}, err
 	}
 
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return VideoInfo{}, fmt.Errorf("cannot get play/options: %w", err)
-	}
+	bodyReader := bytes.NewReader(response.Body)
 
-	defer func() {
-		_ = response.Body.Close()
-	}()
-
-	if response.StatusCode != http.StatusOK {
-		return VideoInfo{}, fmt.Errorf(metadataHTTPStatusErrorFormat, response.StatusCode)
-	}
-
-	return parseVideoInfoFromVideoApiResponse(response.Body)
+	return parseVideoInfoFromVideoApiResponse(bodyReader)
 }
 
 func parseVideoInfoFromVideoApiResponse(bodyReader io.Reader) (VideoInfo, error) {
 	readBody, err := io.ReadAll(bodyReader)
 	if err != nil {
-		return VideoInfo{}, fmt.Errorf("cannot read body: %w", err)
+		return VideoInfo{}, fmt.Errorf(metadataReadErrorFormat, err)
 	}
 
 	type videoBalancer struct {
@@ -83,12 +77,24 @@ func parseVideoInfoFromVideoApiResponse(bodyReader io.Reader) (VideoInfo, error)
 		VideoBalancer videoBalancer `json:"video_balancer"`
 	}
 
-	var eBody expectedBody
+	var metadata expectedBody
 
-	err = json.Unmarshal(readBody, &eBody)
+	err = json.Unmarshal(readBody, &metadata)
 	if err != nil {
-		return VideoInfo{}, fmt.Errorf("cannot unmarshal body: %w", err)
+		return VideoInfo{}, fmt.Errorf(metadataDecodeErrorFormat, err)
 	}
 
-	return VideoInfo{eBody.Title, eBody.VideoBalancer.M3U8}, nil
+	if strings.TrimSpace(metadata.Title) == "" || strings.TrimSpace(metadata.VideoBalancer.M3U8) == "" {
+		return VideoInfo{}, errors.New(videoMissingFieldsMessage)
+	}
+
+	playlistURL, err := url.Parse(metadata.VideoBalancer.M3U8)
+	if err != nil || (playlistURL.Scheme != metadataHTTPScheme && playlistURL.Scheme != metadataHTTPSScheme) || playlistURL.Hostname() == "" || playlistURL.User != nil {
+		return VideoInfo{}, errors.New(videoInvalidPlaylistURLMessage)
+	}
+
+	return VideoInfo{
+		Title:              metadata.Title,
+		MasterPlaylistLink: metadata.VideoBalancer.M3U8,
+	}, nil
 }

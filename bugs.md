@@ -79,11 +79,11 @@ Rutube compatibility was not rerun for this parsing-only change.
 
 ## 3. Bound HTTP requests and report failures explicitly
 
-- [ ] Introduce an injectable HTTP client with timeouts and context cancellation.
+- [x] Introduce an injectable HTTP client with timeouts and context cancellation.
 - [x] Check HTTP status before parsing metadata or playlists.
-- [ ] Validate required metadata fields instead of accepting error JSON as an
+- [x] Validate required metadata fields instead of accepting error JSON as an
   empty successful response.
-- [ ] Close response bodies on every success and failure path, including master
+- [x] Close response bodies on every success and failure path, including master
   playlist responses.
 
 Tests:
@@ -102,12 +102,46 @@ Regression fixtures reproduce HTTP 404/503 being accepted as successful metadata
 or playlists before the fix, including valid-looking bodies on error responses.
 Tests also cover success, body closure, malformed success JSON and a missing
 playlist through the public API. Required JSON field validation, injectable HTTP
-clients, response limits and retry classification remain separate fixes.
+readers and response limits are completed below. Retry classification remains
+separate work.
 
 Live checksum scripts and unchanged reference hashes now live in `tests/e2e`.
 Makefile targets use the new path; the script resolves the project root two levels
 above its location. The move is checked with shell syntax, Makefile dry runs and
 an isolated script fixture; it is not a new live Rutube verification.
+
+Section 3 completed on `codex/fix-metadata-validation`:
+
+- `internal/httpclient` owns a small injectable request interface and bounded
+  reads. Requests have 45-second deadlines and default clients have 30-second TLS
+  handshake limits. Metadata and playlist bodies are limited to 8 MiB, including unknown-length
+  streams, and always close after success, status errors, truncation or read errors.
+- Rutube's injected `Client` accepts context explicitly for video and playlist
+  operations. HLS master readers expose the same cancellation seam, and media
+  readers accept the injected HTTP reader. Existing CLI entry points delegate to
+  these bounded readers; metadata/playlist retries retain their existing two-minute
+  operation deadline and three-attempt policy.
+- Video metadata requires a nonblank title and an absolute HTTP(S) playlist URL
+  without credentials. Playlist titles, result arrays, video IDs and required
+  continuation URLs are validated. Explicit empty lists remain valid, and valid
+  titles/URLs are preserved.
+- Playlist pagination resolves relative next links against final redirected URLs,
+  detects cycles, stops at 10,000 pages and limits total response data to 32 MiB.
+- Segment transfers use the injectable request contract and configured default
+  transport while retaining their existing four-attempt retry and timeout policy.
+
+Tests cover HTTP 404/503, HTTP 200 error JSON, malformed/missing fields, successful
+metadata, empty/final/continuing pages, preserved read errors, truncated and
+oversized bodies, closure without parsing error responses, redirects, cyclic and
+oversized pagination, stalled headers/bodies, caller deadlines and cancellation.
+Local HTTP fixtures and injected readers require no live Rutube or FFmpeg. The
+existing segment retry and cleanup regressions remain in the ordinary test suite.
+
+Build, lint and race checks validate section 3. Fifty race-enabled repetitions of
+the cancellation checks passed, verifying that requests and fixture handlers finish
+before cleanup. Pipeline-wide shutdown,
+output safety and other later sections remain separate work. Live Rutube checks
+were not rerun for this HTTP/validation change.
 
 ## 4. Propagate pipeline errors and own temporary data
 
@@ -207,7 +241,8 @@ Completed structure changes:
   implementation in its own file.
 - [x] Remove the unused worker-pool implementation and unused stage field.
 
-Remaining findings from source inspection:
+Original findings from source inspection (completion is tracked in the stage
+checklists above):
 
 | Priority | Rule and finding | Location | Required verification |
 | --- | --- | --- | --- |

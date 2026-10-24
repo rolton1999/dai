@@ -2,12 +2,11 @@ package hls
 
 import (
 	"context"
+	"dai/internal/httpclient"
 	"dai/internal/retry"
 	"errors"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
 	"net/url"
 	"path/filepath"
 	"strconv"
@@ -43,15 +42,13 @@ const (
 	mediaCommentPrefix           = "#"
 	mediaSegmentExtension        = ".ts"
 	mediaSegmentSeparator        = "_"
-	mediaPlaylistRequestError    = "cannot get media playlist: %w"
-	mediaPlaylistStatusError     = "cannot get media playlist: HTTP %d"
-	mediaPlaylistReadError       = "cannot read media playlist: %w"
-	mediaPlaylistBaseURLError    = "cannot parse media playlist URL: %w"
 	mediaPlaylistSegmentURLError = "cannot parse segment URI: %w"
 	mediaPlaylistEmptyError      = "media playlist has no segments"
 )
 
 func collectSegmentMetas(playlist VariantPlaylist, directoryName, resultName string) ([]segmentMeta, error) {
+	reader := httpclient.New(nil)
+
 	operationContext, cancel := context.WithTimeout(context.Background(), playlistRequestTimeout)
 	defer cancel()
 
@@ -60,7 +57,7 @@ func collectSegmentMetas(playlist VariantPlaylist, directoryName, resultName str
 	err := retry.Do(operationContext, func(attemptContext context.Context) error {
 		var operationError error
 
-		result, operationError = collectSegmentMetasOnce(attemptContext, playlist, directoryName, resultName)
+		result, operationError = collectSegmentMetasOnce(attemptContext, reader, playlist, directoryName, resultName)
 
 		return operationError
 	})
@@ -70,47 +67,26 @@ func collectSegmentMetas(playlist VariantPlaylist, directoryName, resultName str
 
 func collectSegmentMetasOnce(
 	operationContext context.Context,
+	reader httpclient.Client,
 	playlist VariantPlaylist,
 	directoryName string,
 	resultName string,
 ) ([]segmentMeta, error) {
-	request, err := http.NewRequestWithContext(operationContext, http.MethodGet, playlist.Link, nil)
+	response, err := reader.Read(operationContext, playlist.Link)
 	if err != nil {
 		return nil, err
 	}
 
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf(mediaPlaylistRequestError, err)
-	}
-
-	defer func() {
-		_ = response.Body.Close()
-	}()
-
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf(mediaPlaylistStatusError, response.StatusCode)
-	}
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, fmt.Errorf(mediaPlaylistReadError, err)
-	}
-
-	baseURL, err := url.Parse(playlist.Link)
-	if err != nil {
-		return nil, fmt.Errorf(mediaPlaylistBaseURLError, err)
-	}
-
-	if response.Request != nil && response.Request.URL != nil {
-		baseURL = response.Request.URL
+	baseURL := response.URL
+	if baseURL == nil {
+		return nil, errors.New(playlistResponseURLIsMissingMessage)
 	}
 
 	resultName = strings.ReplaceAll(resultName, " ", mediaSegmentSeparator)
 	resultName = strings.ReplaceAll(resultName, "/", "")
 	filePrefix := filepath.Join(directoryName, resultName)
 
-	return parseSegmentMetas(string(body), baseURL, filePrefix)
+	return parseSegmentMetas(string(response.Body), baseURL, filePrefix)
 }
 
 /*
