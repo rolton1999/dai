@@ -28,7 +28,7 @@ func GetVideoInfo(videoID string) (VideoInfo, error) {
 	}
 
 	res, err := parseVideoInfoFromVideoApiResponse(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	return res, err
 }

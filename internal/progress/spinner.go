@@ -1,4 +1,4 @@
-package util
+package progress
 
 import (
 	"fmt"
@@ -8,6 +8,7 @@ import (
 func SpinningMessage(logger Logger, message string, after string) func() {
 	stop := make(chan struct{})
 	done := make(chan struct{})
+
 	go func() {
 		frames := []string{"/", "-", "\\", "|"}
 
@@ -17,6 +18,7 @@ func SpinningMessage(logger Logger, message string, after string) func() {
 		}()
 
 		const tickTime = 200 * time.Millisecond
+
 		ticker := time.NewTicker(tickTime)
 
 		for frameI := 0; ; frameI = (frameI + 1) % len(frames) {
@@ -25,6 +27,7 @@ func SpinningMessage(logger Logger, message string, after string) func() {
 				return
 			case <-ticker.C:
 			}
+
 			logger.UpdateWithSuffix(fmt.Sprintf("%s %s", message, frames[frameI]))
 		}
 	}()

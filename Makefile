@@ -1,6 +1,20 @@
+GO ?= go
+GOLANGCI_LINT_VERSION := v2.15.0
+GOLANGCI_LINT_PACKAGE := github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+LINT_FLAGS ?= ./...
+TEST_FLAGS ?= -race -count=1
+
+.PHONY: build clean lint test test-small test-big
+
 build:
 	mkdir -p bin
-	go build -o ./bin/dai ./cmd
+	$(GO) build -o ./bin/dai ./cmd/dai
+
+lint:
+	$(GO) run $(GOLANGCI_LINT_PACKAGE)@$(GOLANGCI_LINT_VERSION) run --fix $(LINT_FLAGS)
+
+test:
+	$(GO) test $(TEST_FLAGS) ./...
 
 clean:
 	rm -rf *.mp4 *.json 

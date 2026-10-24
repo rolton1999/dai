@@ -1,4 +1,4 @@
-package util
+package progress
 
 import "fmt"
 
@@ -24,10 +24,12 @@ func (l *loggerImpl) NewPrefix(prefix string) {
 
 func (l *loggerImpl) UpdateWithSuffix(suffix string) {
 	s := fmt.Sprintf("%s%s", l.prefix, suffix)
+
 	l.longestLineLen = max(l.longestLineLen, len(s))
 	for len(s) < l.longestLineLen {
 		s += " "
 	}
+
 	fmt.Printf("\r%s", s)
 }
 
