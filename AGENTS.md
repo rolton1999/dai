@@ -60,6 +60,19 @@ tracked in `bugs.md` until implementation and tests are complete.
   that variable to the outer constructor. Apply this rule to production code,
   tests and standard-library wrappers such as readers and closers.
 
+  Avoid:
+
+  ```go
+  service := some.New(other.New())
+  ```
+
+  Prefer:
+
+  ```go
+  dependency := other.New()
+  service := some.New(dependency)
+  ```
+
 - Export the behavior callers need through small interfaces. Keep concrete
   implementations unexported and return an interface from exported constructors.
   Configuration structs, shared protocol/data structs, sentinel errors and
