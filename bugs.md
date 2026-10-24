@@ -5,15 +5,23 @@ the stages in order, keeping `make lint` and `make test` passing after each stag
 
 ## 1. Parse and validate input URLs
 
-- [ ] Use `net/url` to validate the host and exact path structure.
-- [ ] Extract video and playlist IDs independently of queries and fragments.
-- [ ] Reject missing IDs and misleading paths such as `/videosomething/`.
+- [x] Use `net/url` to validate the host and exact path structure.
+- [x] Extract video and playlist IDs independently of queries and fragments.
+- [x] Reject missing IDs and misleading paths such as `/videosomething/`.
 
 Tests:
 
 - Table-driven tests for video and playlist links with trailing slashes, queries,
   fragments, missing IDs, incorrect hosts, and invalid paths.
 - Keep the existing no-argument regression test.
+
+Implemented independently on `codex/fix-url-validation`. Accepted links use HTTPS,
+the exact `rutube.ru` host (case-insensitive, without credentials or explicit
+ports), and `/video/<32 hex ID>` or `/plst/<positive numeric ID>`. A single trailing
+slash, query and fragment are allowed; query/fragment values do not enter the ID.
+Malformed paths and missing IDs fail before metadata requests. Parser table tests
+and the existing no-argument/empty-argument regressions cover this change. Other
+stages below remain separate work.
 
 ## 2. Replace positional HLS parsing
 

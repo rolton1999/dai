@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -11,51 +13,38 @@ const (
 	notExpected argType = iota
 	singleVideo
 	playlist
+	rutubeHost           = "rutube.ru"
+	pathSeparator        = "/"
+	expectedPathParts    = 3
+	videoIDExpression    = `^[a-fA-F0-9]{32}$`
+	playlistIDExpression = `^[1-9][0-9]*$`
+	secureScheme         = "https"
+	videoPath            = "video"
+	playlistPath         = "plst"
+	invalidLinkError     = "invalid Rutube video or playlist URL: %q"
 )
 
-// playlist link: https://rutube.ru/plst/742811/
-// single video link: https://rutube.ru/video/9ca71e90182fa8649d1db2c9e5e043fd/
-func analyzeArgURL(link string) argType {
-	const prefix = "https://rutube.ru/"
+var videoIDPattern = regexp.MustCompile(videoIDExpression)
+var playlistIDPattern = regexp.MustCompile(playlistIDExpression)
 
-	if !strings.HasPrefix(link, prefix) {
-		return notExpected
+func parseLink(link string) (argType, string, error) {
+	parsed, err := url.Parse(link)
+	if err != nil || parsed.Scheme != secureScheme || !strings.EqualFold(parsed.Host, rutubeHost) || parsed.User != nil || parsed.RawPath != "" {
+		return notExpected, "", fmt.Errorf(invalidLinkError, link)
 	}
 
-	const (
-		playlistLink = "plst"
-		videoLink    = "video"
-	)
-
-	afterPrefix := link[len(prefix):]
-	switch {
-	case strings.HasPrefix(afterPrefix, playlistLink):
-		return playlist
-	case strings.HasPrefix(afterPrefix, videoLink):
-		return singleVideo
+	parts := strings.Split(strings.TrimSuffix(parsed.Path, pathSeparator), pathSeparator)
+	if len(parts) != expectedPathParts || parts[0] != "" {
+		return notExpected, "", fmt.Errorf(invalidLinkError, link)
 	}
 
-	return notExpected
-}
-
-func getVideoIDFromArgURL(url string) (string, error) {
-	url = strings.TrimSuffix(url, "/")
-
-	i := strings.LastIndex(url, "/")
-	if i == -1 {
-		return "", fmt.Errorf("cannot find the video id in ulr: %s", url)
+	if parts[1] == videoPath && videoIDPattern.MatchString(parts[2]) {
+		return singleVideo, parts[2], nil
 	}
 
-	return url[i+1:], nil
-}
-
-func getPlaylistIDFromArgURL(url string) (string, error) {
-	url = strings.TrimSuffix(url, "/")
-
-	i := strings.LastIndex(url, "/")
-	if i == -1 {
-		return "", fmt.Errorf("cannot find the playlist id in ulr: %s", url)
+	if parts[1] == playlistPath && playlistIDPattern.MatchString(parts[2]) {
+		return playlist, parts[2], nil
 	}
 
-	return url[i+1:], nil
+	return notExpected, "", fmt.Errorf(invalidLinkError, link)
 }

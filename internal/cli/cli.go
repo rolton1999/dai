@@ -7,9 +7,8 @@ import (
 )
 
 var (
-	errWithoutArgs            error = fmt.Errorf("used without args, enter some link")
-	errEmptyLink              error = fmt.Errorf("url should not be empty")
-	errNotExpectedContentLink error = fmt.Errorf("not expected content link: only video and playlist are supported")
+	errWithoutArgs error = fmt.Errorf("used without args, enter some link")
+	errEmptyLink   error = fmt.Errorf("url should not be empty")
 )
 
 func Run(arguments []string) error {
@@ -17,35 +16,20 @@ func Run(arguments []string) error {
 		return errWithoutArgs
 	}
 
-	url := arguments[0]
-	if len(url) == 0 {
+	link := arguments[0]
+	if link == "" {
 		return errEmptyLink
 	}
 
-	linkType := analyzeArgURL(url)
-
-	logger := progress.NewLogger()
-
-	switch linkType {
-	case singleVideo:
-		videoID, err := getVideoIDFromArgURL(url)
-		if err != nil {
-			return err
-		}
-
-		return download.DownloadSingleVideo(logger, videoID)
-
-	case playlist:
-		playlistID, err := getPlaylistIDFromArgURL(url)
-		if err != nil {
-			return err
-		}
-
-		return download.DownloadPlaylist(logger, playlistID)
-
-	case notExpected:
-		return errNotExpectedContentLink
+	linkType, contentID, err := parseLink(link)
+	if err != nil {
+		return err
 	}
 
-	return nil
+	logger := progress.NewLogger()
+	if linkType == singleVideo {
+		return download.DownloadSingleVideo(logger, contentID)
+	}
+
+	return download.DownloadPlaylist(logger, contentID)
 }
