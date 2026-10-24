@@ -2,18 +2,47 @@ package hls
 
 import (
 	"bytes"
+	"context"
+	"dai/internal/retry"
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
+const playlistRequestTimeout = 2 * time.Minute
+
 func GetVariantPlaylists(masterPlaylistLink string) ([]VariantPlaylist, error) {
+	operationContext, cancel := context.WithTimeout(context.Background(), playlistRequestTimeout)
+	defer cancel()
+
+	var result []VariantPlaylist
+
+	err := retry.Do(operationContext, func(attemptContext context.Context) error {
+		var operationError error
+
+		result, operationError = getVariantPlaylists(attemptContext, masterPlaylistLink)
+
+		return operationError
+	})
+
+	return result, err
+}
+
+func getVariantPlaylists(operationContext context.Context, masterPlaylistLink string) ([]VariantPlaylist, error) {
 	const extM3UPrefix = "#EXTM3U"
 
-	resp, err := http.Get(masterPlaylistLink)
+	request, err := http.NewRequestWithContext(operationContext, http.MethodGet, masterPlaylistLink, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get m3u8: %w", err)
 	}
+
+	defer func() { _ = resp.Body.Close() }()
 
 	extM3UBytes, err := io.ReadAll(resp.Body)
 	if err != nil {

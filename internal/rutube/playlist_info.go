@@ -1,6 +1,8 @@
 package rutube
 
 import (
+	"context"
+	"dai/internal/retry"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,12 +20,34 @@ func (pi PlaylistInfo) String() string {
 }
 
 func GetPlaylistInfo(playlistID string) (PlaylistInfo, error) {
+	operationContext, cancel := context.WithTimeout(context.Background(), metadataRequestTimeout)
+	defer cancel()
+
+	var result PlaylistInfo
+
+	err := retry.Do(operationContext, func(attemptContext context.Context) error {
+		var operationError error
+
+		result, operationError = getPlaylistInfo(attemptContext, playlistID)
+
+		return operationError
+	})
+
+	return result, err
+}
+
+func getPlaylistInfo(operationContext context.Context, playlistID string) (PlaylistInfo, error) {
 	const (
 		playlistApiURL        = "https://rutube.ru/api/playlist/custom/%s/?format=json"
 		playlistApiDetailsURL = "https://rutube.ru/api/playlist/custom/%s/videos/?format=json"
 	)
 
-	resp, err := http.Get(fmt.Sprintf(playlistApiURL, playlistID))
+	request, err := http.NewRequestWithContext(operationContext, http.MethodGet, fmt.Sprintf(playlistApiURL, playlistID), nil)
+	if err != nil {
+		return PlaylistInfo{}, err
+	}
+
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return PlaylistInfo{}, fmt.Errorf("cannot get playlist info: %w", err)
 	}
@@ -40,7 +64,12 @@ func GetPlaylistInfo(playlistID string) (PlaylistInfo, error) {
 
 	next := fmt.Sprintf(playlistApiDetailsURL, playlistID)
 	for len(next) != 0 {
-		resp, err = http.Get(next)
+		request, err = http.NewRequestWithContext(operationContext, http.MethodGet, next, nil)
+		if err != nil {
+			return PlaylistInfo{}, err
+		}
+
+		resp, err = http.DefaultClient.Do(request)
 		if err != nil {
 			return PlaylistInfo{}, fmt.Errorf("cannot get playlist details: %w", err)
 		}

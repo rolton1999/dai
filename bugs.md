@@ -236,3 +236,42 @@ downloaded and converted the video with exit status zero. FFprobe reported H.264
 video at 1280x720, AAC audio, duration 5696.882698 seconds, and a 961773660-byte MP4.
 All live-test artifacts were removed afterward. Build, lint, race tests, and 50
 repetitions of the deterministic segment retry tests also passed.
+
+## Metadata retries and split live tests
+
+The supplied retry helper is exposed as `retry.Do` and used for video
+metadata, complete playlist metadata, master playlists, and media playlists.
+These operations have a two-minute context deadline and at most three attempts.
+Cancellation is checked before attempts; backoff waits one and two seconds.
+Segment downloads retain their existing specialized retries without nesting the
+generic helper around them.
+
+Tests cover timeout recovery, interrupted playlist bodies, cancellation, exhausted
+attempts, and restarting playlist metadata without duplicating earlier pages.
+
+`make e2e-single` and `make e2e-playlist` run independently and stream CLI progress
+and checksum results directly to the terminal. `make e2e` runs both. The real single-video checksum
+test passed. The colon-prefixed playlist filename conversion bug is fixed below.
+
+## Fixed failure: output title interpreted as a protocol
+
+The first E2E playlist title begins with `6:57`. Passing that relative filename
+directly to FFmpeg causes `Protocol not found` and exit status 8. The same valid
+generated transport stream converts successfully when the output path is
+absolute, independently of Rutube metadata or network downloads.
+
+Conversion now resolves the output filename to an absolute path, preserves FFmpeg
+diagnostics in returned errors, and stops the spinner before reporting either
+success or failure. Error paths do not print READY.
+
+Real FFmpeg regression tests cover plain, colon-prefixed, and leading-hyphen
+filenames, plus invalid-input diagnostics and failure reporting:
+
+```sh
+go test -tags=integration -race -timeout=60s ./internal/ffmpeg
+```
+
+The live playlist test converted its first two videos successfully after the fix,
+then stopped on a media-playlist TLS handshake timeout for the third video after
+the configured retries. The complete playlist checksum run has not passed yet;
+its reference hashes were not changed.
