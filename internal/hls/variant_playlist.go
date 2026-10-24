@@ -1,11 +1,39 @@
 package hls
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
+
+const (
+	bandwidthAttribute   = "BANDWIDTH"
+	resolutionAttribute  = "RESOLUTION"
+	frameRateAttribute   = "FRAME-RATE"
+	codecsAttribute      = "CODECS"
+	audioAttribute       = "AUDIO"
+	videoAttribute       = "VIDEO"
+	subtitlesAttribute   = "SUBTITLES"
+	maximumDimension     = 65535
+	variantDisplayFormat = "{\n\tbandwidth: %d,\n \tframeRate: %f,\n \tcodecs: %v,\n \tresolution: %s,\n \tlink: %s,\n}"
+)
+
+const (
+	invalidVariantBandwidthMessage           = "invalid variant bandwidth"
+	missingOrInvalidVariantResolutionMessage = "missing or invalid variant resolution"
+	invalidVariantDimensionsMessage          = "invalid variant dimensions"
+	invalidFrameRateMessage                  = "invalid frame rate"
+	externalMediaTracksAreUnsupportedMessage = "external media tracks are unsupported"
+	variantURIIsMissingMessage               = "variant URI is missing"
+	invalidHLSAttributeMessage               = "invalid HLS attribute"
+	unterminatedQuotedAttributeMessage       = "unterminated quoted attribute"
+	missingAttributeSeparatorMessage         = "missing attribute separator"
+	duplicateHLSAttributeMessage             = "duplicate HLS attribute"
+)
+
+const streamTag = "#EXT-X-STREAM-INF:"
 
 type VariantPlaylist struct {
 	bandwidth  int
@@ -15,88 +43,103 @@ type VariantPlaylist struct {
 	Link       string
 }
 
-func (s VariantPlaylist) String() string {
-	return fmt.Sprintf(
-		"{\n\tbandwidth: %d,\n \tframeRate: %f,\n \tcodecs: %v,\n \tresolution: %s,\n \tlink: %s,\n}",
-		s.bandwidth,
-		s.frameRate,
-		s.codecs,
-		s.resolution,
-		s.Link,
-	)
+func (variant VariantPlaylist) String() string {
+	return fmt.Sprintf(variantDisplayFormat, variant.bandwidth, variant.frameRate, variant.codecs, variant.resolution, variant.Link)
 }
-
-// meta: #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=156000,FRAME-RATE=29.97,CODECS="avc1.4d400c, mp4a.40.2",RESOLUTION=256x144
-func variantPlaylistFromBytes(meta []byte, link []byte) (VariantPlaylist, error) {
-	var playList VariantPlaylist
-
-	// skip #EXT-X-STREAM-INF:PROGRAM-ID=1
-	firstComma := bytes.Index(meta, []byte{','})
-	bytes := meta[firstComma+1:]
-
-	field := 0
-
-	for i := 0; i < len(bytes); {
-		equalSignIndex := i
-		for ; bytes[equalSignIndex] != '='; equalSignIndex++ {
-		}
-
-		commaI := equalSignIndex + 1
-
-		var toFind byte = ','
-
-		inc := 1
-		// if we have quoted "codec1, codec2" instead of direct unquoted value
-		if commaI < len(bytes) && bytes[commaI] == '"' {
-			equalSignIndex += 1
-			commaI += 1
-			toFind = '"'
-			inc += 1
-		}
-
-		for ; commaI != len(bytes) && bytes[commaI] != toFind; commaI++ {
-		}
-
-		got := string(bytes[equalSignIndex+1 : commaI])
-
-		switch field {
-		case 0:
-			bandwidth, e := strconv.Atoi(got)
-			if e != nil {
-				return playList, fmt.Errorf("cannot parse bandwidth: %s", got)
-			}
-
-			playList.bandwidth = bandwidth
-		case 1:
-			frameRate, e := strconv.ParseFloat(got, 64)
-			if e != nil {
-				return playList, fmt.Errorf("cannot parse frameRate: %s", got)
-			}
-
-			playList.frameRate = frameRate
-		case 2:
-			codecs := strings.Split(got, ",")
-			for _, c := range codecs {
-				playList.codecs = append(playList.codecs, strings.TrimSpace(c))
-			}
-		case 3:
-			split := strings.Split(got, "x")
-			if len(split) != 2 {
-				return playList, fmt.Errorf("cannot parse resolution: %s", got)
-			}
-
-			x, _ := strconv.Atoi(split[0])
-			y, _ := strconv.Atoi(split[1])
-			playList.resolution = Resolution{x, y}
-		default:
-			return VariantPlaylist{}, fmt.Errorf("cannot parse EXTM3U, unknown field: %s", got)
-		}
-
-		i = commaI + inc
-		field += 1
+func variantPlaylistFromBytes(meta, link []byte) (VariantPlaylist, error) {
+	attributes, err := parseAttributes(strings.TrimPrefix(string(meta), streamTag))
+	if err != nil {
+		return VariantPlaylist{}, err
 	}
 
-	playList.Link = string(link)
+	bandwidth, err := strconv.Atoi(attributes[bandwidthAttribute])
+	if err != nil || bandwidth <= 0 {
+		return VariantPlaylist{}, errors.New(invalidVariantBandwidthMessage)
+	}
 
-	return playList, nil
+	dimensions := strings.Split(attributes[resolutionAttribute], "x")
+	if len(dimensions) != 2 {
+		return VariantPlaylist{}, errors.New(missingOrInvalidVariantResolutionMessage)
+	}
+
+	width, widthErr := strconv.Atoi(dimensions[0])
+
+	height, heightErr := strconv.Atoi(dimensions[1])
+	if widthErr != nil || heightErr != nil || width <= 0 || height <= 0 || width > maximumDimension || height > maximumDimension {
+		return VariantPlaylist{}, errors.New(invalidVariantDimensionsMessage)
+	}
+
+	frameRate := float64(0)
+	if value, exists := attributes[frameRateAttribute]; exists {
+		frameRate, err = strconv.ParseFloat(value, 64)
+		if err != nil || frameRate <= 0 || math.IsNaN(frameRate) || math.IsInf(frameRate, 0) {
+			return VariantPlaylist{}, errors.New(invalidFrameRateMessage)
+		}
+	}
+
+	if attributes[audioAttribute] != "" || attributes[videoAttribute] != "" || attributes[subtitlesAttribute] != "" {
+		return VariantPlaylist{}, errors.New(externalMediaTracksAreUnsupportedMessage)
+	}
+
+	uri := strings.TrimSpace(string(link))
+	if uri == "" || strings.HasPrefix(uri, "#") {
+		return VariantPlaylist{}, errors.New(variantURIIsMissingMessage)
+	}
+
+	var codecs []string
+
+	if value := attributes[codecsAttribute]; value != "" {
+		for _, codec := range strings.Split(value, ",") {
+			codecs = append(codecs, strings.TrimSpace(codec))
+		}
+	}
+
+	return VariantPlaylist{bandwidth: bandwidth, frameRate: frameRate, codecs: codecs, resolution: Resolution{width: width, height: height}, Link: uri}, nil
+}
+func parseAttributes(value string) (map[string]string, error) {
+	if strings.HasSuffix(strings.TrimSpace(value), ",") {
+		return nil, errors.New(invalidHLSAttributeMessage)
+	}
+
+	attributes := make(map[string]string)
+
+	for value != "" {
+		key, remainder, exists := strings.Cut(value, "=")
+
+		key = strings.TrimSpace(key)
+		if !exists || key == "" || strings.Contains(key, ",") {
+			return nil, errors.New(invalidHLSAttributeMessage)
+		}
+
+		var attribute string
+
+		if strings.HasPrefix(remainder, "\"") {
+			ending := strings.Index(remainder[1:], "\"")
+			if ending < 0 {
+				return nil, errors.New(unterminatedQuotedAttributeMessage)
+			}
+
+			attribute = remainder[1 : ending+1]
+
+			value = remainder[ending+2:]
+			if value != "" {
+				if !strings.HasPrefix(value, ",") {
+					return nil, errors.New(missingAttributeSeparatorMessage)
+				}
+
+				value = value[1:]
+			}
+		} else {
+			attribute, value, _ = strings.Cut(remainder, ",")
+			attribute = strings.TrimSpace(attribute)
+		}
+
+		if _, exists := attributes[key]; exists {
+			return nil, errors.New(duplicateHLSAttributeMessage)
+		}
+
+		attributes[key] = attribute
+	}
+
+	return attributes, nil
 }

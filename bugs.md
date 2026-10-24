@@ -26,16 +26,16 @@ stages below remain separate work.
 ## 2. Replace positional HLS parsing
 
 - [x] Parse media playlist tags and URI lines explicitly instead of assuming fixed line offsets.
-- [ ] Replace positional parsing in master playlists.
-- [ ] Read variant attributes by name, respecting quoted commas.
+- [x] Replace positional parsing in master playlists.
+- [x] Read variant attributes by name, respecting quoted commas.
 - [x] Support LF, CRLF, blank lines, comments, and variable headers in media playlists.
-- [ ] Support variable master playlist tags and reordered attributes.
+- [x] Support variable master playlist tags and reordered attributes.
 - [x] Resolve segment references against the final response URL after redirects,
   including relative, root-relative, and absolute references.
-- [ ] Resolve variant references against the final master playlist URL.
+- [x] Resolve variant references against the final master playlist URL.
 - [ ] Return errors for empty, malformed, or unsupported playlists instead of
   panicking or producing incomplete output.
-- [ ] Make best-variant selection reject empty lists and invalid resolutions.
+- [x] Make best-variant selection reject empty lists and invalid resolutions.
 - [ ] Explicitly reject unsupported encryption, byte ranges, and separate audio
   tracks until those features are implemented.
 
@@ -48,6 +48,20 @@ Tests:
 - Empty playlists, truncated entries, malformed attributes, invalid resolutions,
   and unsupported playlist features must produce clear errors.
 - Fuzz both parsers: arbitrary input must never panic.
+
+Master-playlist portion implemented independently on `codex/fix-hls-master-parsing`.
+`internal/hls/master_playlist_test.go` covers optional/reordered attributes, quoted
+codec lists, LF/CRLF, blank lines/comments, malformed/truncated entries, duplicate
+attributes, invalid dimensions/rates, URL resolution after redirects, unsupported
+external tracks/encryption and empty variant selection. The parser also has a
+fuzz target; a five-second run passed over 311,000 inputs without a crash. Build,
+lint and race-enabled tests passed. Variant selection ranks pixel area, then bandwidth for identical
+resolutions. Master parsing rejects external media tracks and session encryption;
+unsupported media-playlist features remain work for a separate branch.
+
+The download caller now propagates selection errors. HTTP retry policy, bounded
+reads, dependency injection, media parsing and download/conversion lifecycle are
+unchanged by this fix. No new live-service compatibility claim is made here.
 
 ## 3. Bound HTTP requests and report failures explicitly
 

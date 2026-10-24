@@ -24,7 +24,10 @@ func DownloadSingleVideo(logger progress.Logger, videoID string) error {
 		return fmt.Errorf("cannot get variant playlists by master link: %w", err)
 	}
 
-	best := hls.GetPlaylistWithBestResolution(variantPlaylists)
+	best, err := hls.GetPlaylistWithBestResolution(variantPlaylists)
+	if err != nil {
+		return err
+	}
 
 	tsFiles, err := hls.DownloadTSFiles(logger, resultingFileName, best)
 	if err != nil {
