@@ -4,8 +4,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"dai/internal/progress"
+)
+
+const (
+	outputPathError = "cannot resolve output path: %w"
+	conversionError = "cannot exec ffmpeg: %w: %s"
 )
 
 func ConcatTSToResult(logger progress.Logger, tsFiles []string, resultName string) error {
@@ -15,7 +21,10 @@ func ConcatTSToResult(logger progress.Logger, tsFiles []string, resultName strin
 		}
 	}()
 
-	stopConvertingMessage := progress.SpinningMessage(logger, " ~ converting", ": READY")
+	resultPath, err := filepath.Abs(resultName)
+	if err != nil {
+		return fmt.Errorf(outputPathError, err)
+	}
 
 	// write concat list file for ffmpeg concat demuxer
 	listPath := ".concat.txt"
@@ -44,14 +53,17 @@ func ConcatTSToResult(logger progress.Logger, tsFiles []string, resultName strin
 
 	cmd := exec.Command(
 		"ffmpeg", "-f", "concat", "-safe", "0", "-i", listPath,
-		"-c", "copy", "-bsf:a", "aac_adtstoasc", resultName)
-	// cmd.Stdout = os.Stdout
-	// cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("cannot exec ffmpeg: %w", err)
-	}
+		"-c", "copy", "-bsf:a", "aac_adtstoasc", resultPath)
+	stopConvertingMessage := progress.SpinningMessage(logger, " ~ converting", "")
+	output, err := cmd.CombinedOutput()
 
 	stopConvertingMessage()
+
+	if err != nil {
+		return fmt.Errorf(conversionError, err, output)
+	}
+
+	logger.UpdateWithSuffix(": READY")
 
 	return nil
 }

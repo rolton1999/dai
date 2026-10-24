@@ -1,6 +1,8 @@
 package hls
 
 import (
+	"context"
+	"dai/internal/progress"
 	"errors"
 	"fmt"
 	"io"
@@ -29,7 +31,34 @@ const (
 )
 
 func collectSegmentMetas(playlist VariantPlaylist, directoryName, resultName string) ([]segmentMeta, error) {
-	response, err := http.Get(playlist.Link)
+	operationContext, cancel := context.WithTimeout(context.Background(), playlistRequestTimeout)
+	defer cancel()
+
+	var result []segmentMeta
+
+	err := progress.Retry(operationContext, func(attemptContext context.Context) error {
+		var operationError error
+
+		result, operationError = collectSegmentMetasOnce(attemptContext, playlist, directoryName, resultName)
+
+		return operationError
+	})
+
+	return result, err
+}
+
+func collectSegmentMetasOnce(
+	operationContext context.Context,
+	playlist VariantPlaylist,
+	directoryName string,
+	resultName string,
+) ([]segmentMeta, error) {
+	request, err := http.NewRequestWithContext(operationContext, http.MethodGet, playlist.Link, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf(mediaPlaylistRequestError, err)
 	}

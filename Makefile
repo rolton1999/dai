@@ -4,7 +4,7 @@ GOLANGCI_LINT_PACKAGE := github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 LINT_FLAGS ?= ./...
 TEST_FLAGS ?= -race -count=1
 
-.PHONY: build clean lint test test-small test-big
+.PHONY: build clean lint test e2e e2e-single e2e-singe e2e-playlist test-small test-big
 
 build:
 	mkdir -p bin
@@ -15,6 +15,16 @@ lint:
 
 test:
 	$(GO) test $(TEST_FLAGS) ./...
+
+e2e: e2e-single e2e-playlist
+
+e2e-single: build
+	bash ./e2e/run.sh single
+
+e2e-singe: e2e-single
+
+e2e-playlist: build
+	bash ./e2e/run.sh playlist
 
 clean:
 	rm -rf *.mp4 *.json 

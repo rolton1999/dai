@@ -1,11 +1,16 @@
 package rutube
 
 import (
+	"context"
+	"dai/internal/progress"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
+
+const metadataRequestTimeout = 2 * time.Minute
 
 type VideoInfo struct {
 	Title              string
@@ -18,11 +23,33 @@ func (vi VideoInfo) String() string {
 }
 
 func GetVideoInfo(videoID string) (VideoInfo, error) {
+	operationContext, cancel := context.WithTimeout(context.Background(), metadataRequestTimeout)
+	defer cancel()
+
+	var result VideoInfo
+
+	err := progress.Retry(operationContext, func(attemptContext context.Context) error {
+		var operationError error
+
+		result, operationError = getVideoInfo(attemptContext, videoID)
+
+		return operationError
+	})
+
+	return result, err
+}
+
+func getVideoInfo(operationContext context.Context, videoID string) (VideoInfo, error) {
 	const template = "https://rutube.ru/api/play/options/%s/?format=json"
 
 	url := fmt.Sprintf(template, videoID)
 
-	resp, err := http.Get(url)
+	request, err := http.NewRequestWithContext(operationContext, http.MethodGet, url, nil)
+	if err != nil {
+		return VideoInfo{}, err
+	}
+
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return VideoInfo{}, fmt.Errorf("cannot get play/options: %w", err)
 	}

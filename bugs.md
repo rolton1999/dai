@@ -236,3 +236,20 @@ downloaded and converted the video with exit status zero. FFprobe reported H.264
 video at 1280x720, AAC audio, duration 5696.882698 seconds, and a 961773660-byte MP4.
 All live-test artifacts were removed afterward. Build, lint, race tests, and 50
 repetitions of the deterministic segment retry tests also passed.
+
+## Metadata retries and split live tests
+
+The supplied retry helper is exposed as `progress.Retry` and used for video
+metadata, complete playlist metadata, master playlists, and media playlists.
+These operations have a two-minute context deadline and at most three attempts.
+Cancellation is checked before attempts; backoff waits one and two seconds.
+Segment downloads retain their existing specialized retries without nesting the
+generic helper around them.
+
+Tests cover timeout recovery, interrupted playlist bodies, cancellation, exhausted
+attempts, and restarting playlist metadata without duplicating earlier pages.
+
+`make e2e-single` and `make e2e-playlist` run independently and stream CLI progress
+and checksum results directly to the terminal. `make e2e` runs both, and
+`make e2e-singe` aliases the single-video target. The real single-video checksum
+test passed. The known colon-prefixed playlist filename conversion bug remains.
