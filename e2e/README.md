@@ -3,7 +3,9 @@
 Run `make e2e-single` or `make e2e-playlist` from the project root.
 `make e2e` runs both.
 Each target streams download/conversion progress and checksum results directly
-to the terminal. It builds `cmd/dai`, downloads the single
+to the terminal and finishes with `E2E single: PASSED` or `E2E playlist: FAILED`
+(as applicable), preserving a nonzero exit status on failure.
+It builds `cmd/dai`, downloads the single
 video and the complete playlist linked in `run.sh`, and checks every MP4 against
 `checksums.sha256`. Missing, extra, or changed files fail the test.
 

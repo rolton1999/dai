@@ -14,13 +14,28 @@ case "$selection" in
     *) echo "Usage: $0 single|playlist" >&2; exit 2 ;;
 esac
 
+workspace=""
+finish() {
+    local status="$?"
+    trap - EXIT
+    if [[ -n "$workspace" ]]; then
+        rm -rf "$workspace" || true
+    fi
+    if [[ "$status" -eq 0 ]]; then
+        printf '\nE2E %s: PASSED\n' "$selection"
+    else
+        printf '\nE2E %s: FAILED\n' "$selection" >&2
+    fi
+    exit "$status"
+}
+trap finish EXIT
+
 if ! grep -Eq "^[[:xdigit:]]{64}  $selection/" "$checksum_file"; then
     echo "Add manually calculated $selection checksums to $checksum_file first." >&2
     exit 1
 fi
 
 workspace="$(mktemp -d "${TMPDIR:-/tmp}/dai-e2e.XXXXXX")"
-trap 'rm -rf "$workspace"' EXIT
 mkdir "$workspace/$selection" "$workspace/segments"
 export TMPDIR="$workspace/segments"
 
