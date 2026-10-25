@@ -65,20 +65,6 @@ func TestRetryableTransferErrors(test *testing.T) {
 	}
 }
 
-func TestNotRetryableMarkerOverridesTransientCause(test *testing.T) {
-	const (
-		wrapperFormat          = "operation failed: %w"
-		unexpectedRetryMessage = "marked error was retryable or lost its cause"
-	)
-
-	marked := MarkAsNotRetryable(io.ErrUnexpectedEOF)
-
-	wrapped := fmt.Errorf(wrapperFormat, marked)
-	if IsRetryable(wrapped) || !errors.Is(wrapped, io.ErrUnexpectedEOF) {
-		test.Fatal(unexpectedRetryMessage)
-	}
-}
-
 func TestRetryStopsOnUnclassifiedError(test *testing.T) {
 	const (
 		failureMessage = "invalid response"

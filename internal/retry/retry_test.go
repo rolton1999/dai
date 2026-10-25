@@ -3,7 +3,6 @@ package retry
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"testing"
 	"testing/synctest"
@@ -88,32 +87,6 @@ func TestRetryStopsOnCancellation(test *testing.T) {
 		})
 		if !errors.Is(err, context.Canceled) {
 			test.Fatalf(retryCanceledErrorFormat, err)
-		}
-	})
-}
-
-func TestRetryStopsOnNotRetryableError(test *testing.T) {
-	const (
-		wrapperFormat         = "request failed: %w"
-		unexpectedRetryFormat = "attempts=%d elapsed=%s error=%v"
-	)
-
-	synctest.Test(test, func(test *testing.T) {
-		attempts := 0
-		started := time.Now()
-		notRetryable := MarkAsNotRetryable(errRetryFixture)
-		wrapped := fmt.Errorf(wrapperFormat, notRetryable)
-
-		err := Do(context.Background(), func(context.Context) error {
-			attempts++
-			return wrapped
-		})
-		if attempts != 1 || time.Since(started) != 0 || err != wrapped || !errors.Is(err, errRetryFixture) {
-			test.Fatalf(unexpectedRetryFormat, attempts, time.Since(started), err)
-		}
-
-		if err := MarkAsNotRetryable(nil); err != nil {
-			test.Fatal(err)
 		}
 	})
 }

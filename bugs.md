@@ -175,9 +175,10 @@ failure is not mistaken for a transient network error. `retry.IsRetryable` is th
 single classification function used by the retry loop and segment transfers.
 HTTP status errors implement `Retryable()` in `internal/http/client`, keeping
 HTTP status rules with their owner. The retry loop respects that decision through
-a small private error interface. Unclassified errors stop immediately;
-`retry.MarkAsNotRetryable` explicitly prevents retries even when its wrapped cause
-would otherwise be transient. Both preserve the original error chain. Metadata and
+a small private error interface. Unclassified errors stop immediately, and
+errors can provide their own decision through `Retryable() bool`. The unused
+marker function, wrapper type and dedicated tests were removed. Classification
+preserves the original error chain. Metadata and
 playlist operations retain three attempts with 1 s / 2 s backoff and their
 existing two-minute deadlines; segment budgets and backoff are unchanged.
 
