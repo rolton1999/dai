@@ -44,6 +44,9 @@ func (doer *boundsDoer) Do(request *http.Request) (*http.Response, error) {
 	return response, nil
 }
 
+func (doer *boundsDoer) Close() {
+}
+
 type boundsFailureReader struct {
 	failure error
 }
@@ -123,7 +126,11 @@ func TestReadCancelsStalledHeadersAndBodies(test *testing.T) {
 			defer server.Close()
 
 			transport := server.Client()
-			client := New(transport)
+
+			streamingClient := NewStreamingClient(transport)
+			defer streamingClient.Close()
+
+			client := New(streamingClient)
 			operationContext, cancel := context.WithCancel(context.Background())
 			result := make(chan error, 1)
 
@@ -207,7 +214,11 @@ func TestReadUsesFinalRedirectURL(test *testing.T) {
 	defer server.Close()
 
 	transport := server.Client()
-	client := New(transport)
+
+	streamingClient := NewStreamingClient(transport)
+	defer streamingClient.Close()
+
+	client := New(streamingClient)
 
 	response, err := client.Read(context.Background(), server.URL+fixtureRedirectPath)
 	if err != nil || response.URL == nil || response.URL.Path != fixtureFinalPath || string(response.Body) != fixtureBody {
@@ -234,6 +245,9 @@ func (doer *deadlineDoer) Do(request *http.Request) (*http.Response, error) {
 	return response, nil
 }
 
+func (doer *deadlineDoer) Close() {
+}
+
 func TestReadAlwaysAddsRequestDeadline(test *testing.T) {
 	doer := &deadlineDoer{}
 	client := New(doer)
@@ -256,6 +270,9 @@ func (doer *responseErrorDoer) Do(request *http.Request) (*http.Response, error)
 	}
 
 	return response, io.ErrUnexpectedEOF
+}
+
+func (doer *responseErrorDoer) Close() {
 }
 
 func TestReadClosesResponseReturnedWithTransportError(test *testing.T) {
@@ -298,8 +315,8 @@ func TestStreamingClientReusesAndClosesConnections(test *testing.T) {
 	server.Start()
 	defer server.Close()
 
-	httpClient := NewStreamingClient()
-	defer httpClient.CloseIdleConnections()
+	httpClient := NewStreamingClient(nil)
+	defer httpClient.Close()
 
 	reader := New(httpClient)
 	for range requestCount {
@@ -312,7 +329,7 @@ func TestStreamingClientReusesAndClosesConnections(test *testing.T) {
 		test.Fatalf(connectionReuseError, connections.Load())
 	}
 
-	httpClient.CloseIdleConnections()
+	httpClient.Close()
 
 	timer := time.NewTimer(fixtureCompletionDeadline)
 	defer timer.Stop()

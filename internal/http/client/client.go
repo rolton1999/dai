@@ -15,23 +15,11 @@ const (
 	httpSecureScheme     = "https"
 	MaximumBodySize      = 8 * 1024 * 1024
 	requestTimeout       = 45 * time.Second
-	handshakeTimeout     = 30 * time.Second
 	invalidURLError      = "expected an absolute HTTP(S) URL"
 	oversizedBodyError   = "metadata response exceeds size limit"
 	statusErrorFormat    = "HTTP %d"
 	missingResponseError = "HTTP client returned an empty response"
 )
-
-// StreamingClient returns responses with streaming bodies. Callers must close each body.
-// Do matches net/http.Client so standard clients and test transports can be used directly.
-type StreamingClient interface {
-	Do(*http.Request) (*http.Response, error)
-}
-
-type ManagedStreamingClient interface {
-	StreamingClient
-	CloseIdleConnections()
-}
 
 type Response struct {
 	Body []byte
@@ -47,28 +35,6 @@ type Client interface {
 
 func New(httpClient StreamingClient) Client {
 	return &clientImpl{httpClient: httpClient}
-}
-
-func NewStreamingClient() ManagedStreamingClient {
-	client := *http.DefaultClient
-	if client.Timeout <= 0 || client.Timeout > requestTimeout {
-		client.Timeout = requestTimeout
-	}
-
-	transport := client.Transport
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
-
-	if configurable, valid := transport.(*http.Transport); valid {
-		cloned := configurable.Clone()
-		cloned.TLSHandshakeTimeout = handshakeTimeout
-		transport = cloned
-	}
-
-	client.Transport = transport
-
-	return &client
 }
 
 type clientImpl struct {

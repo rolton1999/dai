@@ -145,8 +145,10 @@ Review follow-up: playlist pages now require an explicit boolean `has_next`;
 missing or null state is rejected instead of silently treating a page as final.
 Regression fixtures cover these cases alongside valid empty and final pages.
 Default HTTP clients are explicitly owned by metadata, HLS playlist and segment
-operations, which close idle connections on return; injected readers remain
-caller-owned. Local connection-state fixtures verify reuse within an operation
+operations, which call `Close()` after their requests finish to release idle
+connections; injected readers remain
+caller-owned. A single `StreamingClient` contract exposes requests and `Close()`;
+its constructor accepts an HTTP client for fixture injection. Local connection-state fixtures verify reuse within an operation
 and closure, and metadata entry-point tests verify cleanup. Cancellation tests
 stop and join their workers on failure paths. The three test-only default-client
 request wrappers and their obsolete transport-installation helper were removed;

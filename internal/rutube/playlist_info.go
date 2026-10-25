@@ -39,8 +39,8 @@ func (pi PlaylistInfo) String() string {
 }
 
 func GetPlaylistInfo(playlistID string) (PlaylistInfo, error) {
-	httpClient := client.NewStreamingClient()
-	defer httpClient.CloseIdleConnections()
+	httpClient := client.NewStreamingClient(nil)
+	defer httpClient.Close()
 
 	reader := client.New(httpClient)
 	provider := newMetadataProvider(reader)

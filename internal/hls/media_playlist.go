@@ -48,8 +48,8 @@ const (
 )
 
 func collectSegmentMetas(playlist VariantPlaylist, directoryName, resultName string) ([]segmentMeta, error) {
-	httpClient := client.NewStreamingClient()
-	defer httpClient.CloseIdleConnections()
+	httpClient := client.NewStreamingClient(nil)
+	defer httpClient.Close()
 
 	reader := client.New(httpClient)
 

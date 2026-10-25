@@ -53,7 +53,9 @@ func TestMasterRejectsHTTPErrorBeforeParsing(test *testing.T) {
 				return response, nil
 			})
 			httpClient := &http.Client{Transport: transport}
-			playlistReader := client.New(httpClient)
+			streamingClient := client.NewStreamingClient(httpClient)
+			test.Cleanup(streamingClient.Close)
+			playlistReader := client.New(streamingClient)
 
 			_, err := getVariantPlaylistsWithReader(context.Background(), playlistReader, masterFixtureURL)
 			if status == http.StatusOK {

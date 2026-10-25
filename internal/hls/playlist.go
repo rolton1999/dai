@@ -35,8 +35,8 @@ const (
 )
 
 func GetVariantPlaylists(masterPlaylistLink string) ([]VariantPlaylist, error) {
-	httpClient := client.NewStreamingClient()
-	defer httpClient.CloseIdleConnections()
+	httpClient := client.NewStreamingClient(nil)
+	defer httpClient.Close()
 
 	reader := client.New(httpClient)
 	provider := newPlaylistClient(reader)

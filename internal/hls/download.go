@@ -29,8 +29,8 @@ func DownloadTSFiles(logger progress.Logger, expectedName string, playlist Varia
 
 	produceStage := newProduceStage(segmentMetas)
 
-	httpClient := client.NewStreamingClient()
-	defer httpClient.CloseIdleConnections()
+	httpClient := client.NewStreamingClient(nil)
+	defer httpClient.Close()
 
 	loadStage := newLoadStage(httpClient)
 	consumeStage, listOfFiles := newConsumeStage(logger, len(segmentMetas), &err)

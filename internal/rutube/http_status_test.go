@@ -64,7 +64,9 @@ func TestVideoRejectsHTTPErrorBeforeParsing(test *testing.T) {
 				return response, nil
 			})
 			httpClient := &http.Client{Transport: transport}
-			reader := client.New(httpClient)
+			streamingClient := client.NewStreamingClient(httpClient)
+			test.Cleanup(streamingClient.Close)
+			reader := client.New(streamingClient)
 
 			info, err := getVideoInfoWithReader(context.Background(), reader, retryVideoID)
 			verifyStatusBody(test, status, body, err)
@@ -121,7 +123,9 @@ func TestPlaylistRejectsHTTPErrorAtEveryEndpoint(test *testing.T) {
 						return response, nil
 					})
 					httpClient := &http.Client{Transport: transport}
-					reader := client.New(httpClient)
+					streamingClient := client.NewStreamingClient(httpClient)
+					test.Cleanup(streamingClient.Close)
+					reader := client.New(streamingClient)
 
 					_, err := getPlaylistInfoWithReader(context.Background(), reader, retryPlaylistID)
 
@@ -156,7 +160,9 @@ func TestMissingPlaylistCannotSucceed(test *testing.T) {
 		return response, nil
 	})
 	httpClient := &http.Client{Transport: transport}
-	reader := client.New(httpClient)
+	streamingClient := client.NewStreamingClient(httpClient)
+	test.Cleanup(streamingClient.Close)
+	reader := client.New(streamingClient)
 
 	provider := newMetadataProvider(reader)
 
@@ -182,7 +188,9 @@ func TestVideoClosesMalformedSuccessBody(test *testing.T) {
 		return response, nil
 	})
 	httpClient := &http.Client{Transport: transport}
-	reader := client.New(httpClient)
+	streamingClient := client.NewStreamingClient(httpClient)
+	test.Cleanup(streamingClient.Close)
+	reader := client.New(streamingClient)
 
 	_, err := getVideoInfoWithReader(context.Background(), reader, retryVideoID)
 	if err == nil || !body.closed {

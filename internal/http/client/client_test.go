@@ -36,6 +36,9 @@ func (doer *responseDoer) Do(request *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: doer.status, Body: doer.body, Request: request, ContentLength: int64(len(fixtureBody))}, nil
 }
 
+func (doer *responseDoer) Close() {
+}
+
 type trackedBody struct {
 	io.Reader
 	closed bool
@@ -119,6 +122,9 @@ func (doer *blockingDoer) Do(request *http.Request) (*http.Response, error) {
 	close(doer.finished)
 
 	return nil, request.Context().Err()
+}
+
+func (doer *blockingDoer) Close() {
 }
 
 func TestReadCancelsStalledRequest(test *testing.T) {

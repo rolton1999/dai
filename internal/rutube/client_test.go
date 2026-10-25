@@ -102,7 +102,9 @@ func TestInjectedProviderHonorsCancellation(test *testing.T) {
 				return nil, request.Context().Err()
 			})
 			httpClient := &http.Client{Transport: transport}
-			reader := client.New(httpClient)
+			streamingClient := client.NewStreamingClient(httpClient)
+			test.Cleanup(streamingClient.Close)
+			reader := client.New(streamingClient)
 			provider := newMetadataProvider(reader)
 			operationContext, cancel := context.WithCancel(context.Background())
 			result := make(chan error, 1)
