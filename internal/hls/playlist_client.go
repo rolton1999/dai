@@ -18,7 +18,7 @@ type playlistClient struct {
 	reader client.Client
 }
 
-func (provider *playlistClient) Variants(operationContext context.Context, link string) ([]VariantPlaylist, error) {
+func (client *playlistClient) Variants(operationContext context.Context, link string) ([]VariantPlaylist, error) {
 	operationContext, cancel := context.WithTimeout(operationContext, playlistRequestTimeout)
 	defer cancel()
 
@@ -27,7 +27,7 @@ func (provider *playlistClient) Variants(operationContext context.Context, link 
 	err := retry.Do(operationContext, func(attemptContext context.Context) error {
 		var err error
 
-		result, err = getVariantPlaylistsWithReader(attemptContext, provider.reader, link)
+		result, err = getVariantPlaylistsWithReader(attemptContext, client.reader, link)
 
 		return err
 	})
