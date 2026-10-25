@@ -26,6 +26,21 @@ type Artifact interface {
 }
 
 func DownloadTSFiles(operationContext context.Context, logger progress.Logger, playlist VariantPlaylist) (result Artifact, resultError error) {
+	httpClient := client.NewStreamingClient(nil)
+	defer httpClient.Close()
+
+	reader := client.New(httpClient)
+
+	return downloadTSFiles(operationContext, logger, playlist, reader, httpClient)
+}
+
+func downloadTSFiles(
+	operationContext context.Context,
+	logger progress.Logger,
+	playlist VariantPlaylist,
+	reader client.Client,
+	httpClient client.StreamingClient,
+) (result Artifact, resultError error) {
 	directoryName, err := os.MkdirTemp("", segmentDirectoryPattern)
 	if err != nil {
 		return nil, fmt.Errorf(temporaryDirectoryErrorFormat, err)
@@ -38,15 +53,12 @@ func DownloadTSFiles(operationContext context.Context, logger progress.Logger, p
 		}
 	}()
 
-	segmentMetas, err := collectSegmentMetas(operationContext, playlist, directoryName, segmentFilePrefix)
+	segmentMetas, err := collectSegmentMetasWithReader(operationContext, reader, playlist, directoryName, segmentFilePrefix)
 	if err != nil {
 		return nil, fmt.Errorf(mediaPlaylistErrorFormat, err)
 	}
 
 	produceStage := newProduceStage(segmentMetas)
-
-	httpClient := client.NewStreamingClient(nil)
-	defer httpClient.Close()
 
 	loadStage := newLoadStage(httpClient)
 	consumeStage, listOfFiles := newConsumeStage(logger, len(segmentMetas))

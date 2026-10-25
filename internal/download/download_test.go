@@ -11,7 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"dai/internal/hls"
+	"dai/internal/http/client"
 	"dai/internal/progress"
+	"dai/internal/rutube"
 )
 
 const (
@@ -27,7 +30,6 @@ const (
 	fixtureTemporaryKey       = "TMPDIR"
 	fixturePermissions        = 0o600
 	fixtureUnrelatedName      = "unrelated.ts"
-	fixtureOutputName         = "video.mp4"
 	fixtureConversionExtra    = "conversion.tmp"
 	fixtureConversionFailure  = "conversion failed"
 	fixtureDeadline           = 5 * time.Second
@@ -45,13 +47,15 @@ func (transport fixtureTransport) RoundTrip(request *http.Request) (*http.Respon
 }
 
 type fixtureLogger struct {
+	suffixes []string
 	newlines int
 }
 
 func (*fixtureLogger) NewPrefix(string) {
 }
 
-func (*fixtureLogger) UpdateWithSuffix(string) {
+func (logger *fixtureLogger) UpdateWithSuffix(suffix string) {
+	logger.suffixes = append(logger.suffixes, suffix)
 }
 
 func (logger *fixtureLogger) PrintNewLine() {
@@ -118,14 +122,19 @@ func TestDownloadOwnsTemporaryFilesThroughConversion(test *testing.T) {
 			http.DefaultClient = &http.Client{Transport: transport}
 
 			conversions := 0
-			convert := func(_ progress.Logger, files []string, output string) error {
+			convert := func(
+				_ context.Context,
+				_ progress.Logger,
+				files []string,
+				output string,
+			) error {
 				conversions++
 
 				if len(files) != 1 {
 					test.Fatalf(unexpectedFilesFormat, files)
 				}
 
-				if output != fixtureOutputName {
+				if filepath.Base(output) != stagingFilename {
 					test.Fatalf(unexpectedOutputFormat, output)
 				}
 
@@ -139,14 +148,32 @@ func TestDownloadOwnsTemporaryFilesThroughConversion(test *testing.T) {
 					test.Fatal(err)
 				}
 
-				return fixture.conversionError
+				if fixture.conversionError != nil {
+					return fixture.conversionError
+				}
+
+				return os.WriteFile(output, []byte(fixtureSegmentBody), fixturePermissions)
 			}
 			logger := &fixtureLogger{}
 
 			operationContext, cancel := context.WithTimeout(context.Background(), fixtureDeadline)
 			defer cancel()
 
-			err := downloadSingleVideo(operationContext, logger, fixtureVideoID, convert)
+			network := client.NewStreamingClient(nil)
+			defer network.Close()
+
+			reader := client.New(network)
+			provider := rutube.New(reader)
+			streams := hls.New(reader, network)
+			converter := conversionAdapter(convert)
+
+			service, err := New(provider, streams, converter, logger)
+			if err != nil {
+				test.Fatal(err)
+			}
+
+			outputDirectory := test.TempDir()
+			err = service.Video(operationContext, fixtureVideoID, Options{OutputDirectory: outputDirectory})
 
 			expectedFailure := fixture.failedPath != "" || fixture.conversionError != nil
 			if (err != nil) != expectedFailure || conversions != fixture.conversions || logger.newlines != fixture.newlines {
@@ -168,4 +195,20 @@ func TestDownloadOwnsTemporaryFilesThroughConversion(test *testing.T) {
 			}
 		})
 	}
+}
+
+type conversionAdapter func(
+	context.Context,
+	progress.Logger,
+	[]string,
+	string,
+) error
+
+func (convert conversionAdapter) Convert(
+	operationContext context.Context,
+	logger progress.Logger,
+	files []string,
+	output string,
+) error {
+	return convert(operationContext, logger, files, output)
 }

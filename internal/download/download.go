@@ -8,32 +8,132 @@ import (
 	"dai/internal/rutube"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 const (
-	videoInfoErrorFormat    = "cannot get videoInfo: %w"
-	variantsErrorFormat     = "cannot get variant playlists by master link: %w"
-	segmentsErrorFormat     = "cannot download ts files: %w"
-	conversionErrorFormat   = "cannot concat ts files to mp4: %w"
-	cleanupErrorFormat      = "cannot remove temporary segments: %w"
-	playlistInfoErrorFormat = "cannot get playlist info: %w"
-	outputExtension         = ".mp4"
+	outputDirectoryPermissions = 0o755
+	stagingFilename            = "result.mp4"
+	fallbackTitle              = "video"
+	readyMessage               = ": READY"
 )
 
-type conversionFunc func(progress.Logger, []string, string) error
+const (
+	downloadDependenciesAreRequiredMessage     = "download dependencies are required"
+	duplicatePlaylistOutputFormat              = "duplicate playlist output: %s"
+	converterDidNotProduceANonemptyFileMessage = "converter did not produce a nonempty file"
+	cannotPublishVideoFormat                   = "cannot publish video: %w"
+	outputAlreadyExistsFormat                  = "output already exists: %s"
+)
 
-func DownloadSingleVideo(logger progress.Logger, videoID string) error {
-	return downloadSingleVideo(context.Background(), logger, videoID, ffmpeg.ConcatTSToResult)
+const (
+	defaultOutputDirectory = "."
+	outputExtension        = ".mp4"
+	outputNameLimit        = 200
+	videoTimeout           = 30 * time.Minute
+	outputWorkspacePattern = ".dai-output-*"
+)
+
+const (
+	filenameReplacement       = "_"
+	filenameReplacementRune   = '_'
+	filenameSlash             = '/'
+	filenameBackslash         = '\\'
+	trimmedFilenameCharacters = ". "
+	leadingHyphen             = "-"
+)
+
+type Options struct {
+	OutputDirectory string
+	Overwrite       bool
 }
 
-func DownloadPlaylist(logger progress.Logger, playlistID string) error {
-	playlistInfo, err := rutube.GetPlaylistInfo(playlistID)
-	if err != nil {
-		return fmt.Errorf(playlistInfoErrorFormat, err)
+type Service interface {
+	Video(context.Context, string, Options) error
+	Playlist(context.Context, string, Options) error
+}
+
+func New(
+	provider rutube.Client,
+	streams hls.Client,
+	converter ffmpeg.Converter,
+	logger progress.Logger,
+) (Service, error) {
+	if provider == nil || streams == nil || converter == nil || logger == nil {
+		return nil, errors.New(downloadDependenciesAreRequiredMessage)
 	}
 
-	for _, videoID := range playlistInfo.VideoIDs {
-		if err := DownloadSingleVideo(logger, videoID); err != nil {
+	return &serviceImpl{provider: provider, streams: streams, converter: converter, logger: logger}, nil
+}
+
+type serviceImpl struct {
+	provider  rutube.Client
+	streams   hls.Client
+	converter ffmpeg.Converter
+	logger    progress.Logger
+}
+
+func (service *serviceImpl) Video(operationContext context.Context, videoID string, options Options) error {
+	info, err := service.provider.Video(operationContext, videoID)
+	if err != nil {
+		return err
+	}
+
+	directory, err := outputDirectory(options.OutputDirectory)
+	if err != nil {
+		return err
+	}
+
+	target := filepath.Join(directory, safeFilename(info.Title))
+	if err := checkDestination(target, options.Overwrite); err != nil {
+		return err
+	}
+
+	return service.download(operationContext, info, target, options.Overwrite)
+}
+
+func (service *serviceImpl) Playlist(operationContext context.Context, playlistID string, options Options) error {
+	playlist, err := service.provider.Playlist(operationContext, playlistID)
+	if err != nil {
+		return err
+	}
+
+	directory, err := outputDirectory(options.OutputDirectory)
+	if err != nil {
+		return err
+	}
+
+	infos := make([]rutube.VideoInfo, 0, len(playlist.VideoIDs))
+	targets := make([]string, 0, len(playlist.VideoIDs))
+	seen := make(map[string]bool)
+
+	for _, videoID := range playlist.VideoIDs {
+		info, err := service.provider.Video(operationContext, videoID)
+		if err != nil {
+			return err
+		}
+
+		target := filepath.Join(directory, safeFilename(info.Title))
+		if seen[target] {
+			return fmt.Errorf(duplicatePlaylistOutputFormat, target)
+		}
+
+		seen[target] = true
+		if err := checkDestination(target, options.Overwrite); err != nil {
+			return err
+		}
+
+		infos = append(infos, info)
+		targets = append(targets, target)
+	}
+
+	for index, info := range infos {
+		if err := service.download(operationContext, info, targets[index], options.Overwrite); err != nil {
 			return err
 		}
 	}
@@ -41,48 +141,137 @@ func DownloadPlaylist(logger progress.Logger, playlistID string) error {
 	return nil
 }
 
-func downloadSingleVideo(
+func (service *serviceImpl) download(
 	operationContext context.Context,
-	logger progress.Logger,
-	videoID string,
-	convert conversionFunc,
+	info rutube.VideoInfo,
+	target string,
+	overwrite bool,
 ) (resultError error) {
-	videoInfo, err := rutube.GetVideoInfo(videoID)
-	if err != nil {
-		return fmt.Errorf(videoInfoErrorFormat, err)
-	}
+	operationContext, cancel := context.WithTimeout(operationContext, videoTimeout)
+	defer cancel()
 
-	resultingFileName := videoInfo.Title + outputExtension
+	service.logger.NewPrefix(filepath.Base(target))
 
-	logger.NewPrefix(resultingFileName)
-
-	variantPlaylists, err := hls.GetVariantPlaylists(videoInfo.MasterPlaylistLink)
-	if err != nil {
-		return fmt.Errorf(variantsErrorFormat, err)
-	}
-
-	best, err := hls.GetPlaylistWithBestResolution(variantPlaylists)
+	variants, err := service.streams.Variants(operationContext, info.MasterPlaylistLink)
 	if err != nil {
 		return err
 	}
 
-	artifact, err := hls.DownloadTSFiles(operationContext, logger, best)
+	best, err := hls.GetPlaylistWithBestResolution(variants)
 	if err != nil {
-		return fmt.Errorf(segmentsErrorFormat, err)
+		return err
+	}
+
+	artifact, err := service.streams.Download(operationContext, service.logger, best)
+	if err != nil {
+		return err
 	}
 
 	defer func() {
-		if err := artifact.Close(); err != nil {
-			resultError = errors.Join(resultError, fmt.Errorf(cleanupErrorFormat, err))
+		resultError = errors.Join(resultError, artifact.Close())
+		if resultError == nil {
+			service.logger.UpdateWithSuffix(readyMessage)
+			service.logger.PrintNewLine()
 		}
 	}()
 
-	err = convert(logger, artifact.Files(), resultingFileName)
+	workspace, err := os.MkdirTemp(filepath.Dir(target), outputWorkspacePattern)
 	if err != nil {
-		return fmt.Errorf(conversionErrorFormat, err)
+		return err
 	}
 
-	logger.PrintNewLine()
+	defer func() {
+		resultError = errors.Join(resultError, os.RemoveAll(workspace))
+	}()
+
+	staging := filepath.Join(workspace, stagingFilename)
+	if err := service.converter.Convert(operationContext, service.logger, artifact.Files(), staging); err != nil {
+		return err
+	}
+
+	if operationContext.Err() != nil {
+		return operationContext.Err()
+	}
+
+	infoOnDisk, err := os.Stat(staging)
+	if err != nil {
+		return err
+	}
+
+	if !infoOnDisk.Mode().IsRegular() || infoOnDisk.Size() == 0 {
+		return errors.New(converterDidNotProduceANonemptyFileMessage)
+	}
+
+	if overwrite {
+		err = os.Rename(staging, target)
+	} else {
+		err = os.Link(staging, target)
+	}
+
+	if err != nil {
+		return fmt.Errorf(cannotPublishVideoFormat, err)
+	}
 
 	return nil
+}
+
+func outputDirectory(directory string) (string, error) {
+	if directory == "" {
+		directory = defaultOutputDirectory
+	}
+
+	absolute, err := filepath.Abs(directory)
+	if err != nil {
+		return "", err
+	}
+
+	if err := os.MkdirAll(absolute, outputDirectoryPermissions); err != nil {
+		return "", err
+	}
+
+	return filepath.EvalSymlinks(absolute)
+}
+
+func checkDestination(path string, overwrite bool) error {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if info.IsDir() || !overwrite {
+		return fmt.Errorf(outputAlreadyExistsFormat, path)
+	}
+
+	return nil
+}
+
+func safeFilename(title string) string {
+	title = strings.ToValidUTF8(title, filenameReplacement)
+	title = strings.Map(func(character rune) rune {
+		if character == filenameSlash || character == filenameBackslash || unicode.IsControl(character) {
+			return filenameReplacementRune
+		}
+
+		return character
+	}, title)
+
+	title = strings.Trim(title, trimmedFilenameCharacters)
+	if title == "" {
+		title = fallbackTitle
+	}
+
+	if strings.HasPrefix(title, leadingHyphen) {
+		title = filenameReplacement + title
+	}
+
+	for len(title) > outputNameLimit {
+		_, width := utf8.DecodeLastRuneInString(title)
+		title = title[:len(title)-width]
+	}
+
+	return title + outputExtension
 }
