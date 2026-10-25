@@ -19,6 +19,7 @@ an MP4. It has no database, HTTP server, or browser frontend.
 | `internal/hls` | HLS playlist parsing, variant selection, segment metadata, and segment downloads. |
 | `internal/ffmpeg` | FFmpeg invocation and concat manifest handling. |
 | `internal/progress` | Terminal progress reporting and spinner lifecycle. |
+| `internal/http/client` | Injectable HTTP reads, request deadlines, response limits and status errors. |
 | `internal/retry` | Context-aware retry execution and backoff. |
 | `internal/pipeline` | Bounded concurrent stage execution and stage contracts. |
 
@@ -54,6 +55,9 @@ tracked in `bugs.md` until implementation and tests are complete.
   declaration such as `width, height int`, or put non-empty structs on one line.
   Apply this rule to named and anonymous structs in production code and tests;
   empty structs may remain `struct{}`.
+- Separate struct declarations from adjacent declarations with a blank line,
+  including other structs and interfaces. Apply this rule to production code
+  and tests.
 
 - Do not nest constructor or factory calls inside other constructor or factory
   calls. Create each dependency in a descriptive local variable first, then pass
@@ -103,6 +107,9 @@ tracked in `bugs.md` until implementation and tests are complete.
   }
   ```
 
+- Keep interfaces unexported when all their callers are inside the owning
+  package. Export an interface only when another package needs to name or use
+  that contract; do not export it for hypothetical future callers.
 - Export the behavior callers need through small interfaces. Keep concrete
   implementations unexported and return an interface from exported constructors.
   Configuration structs, shared protocol/data structs, sentinel errors and
@@ -115,6 +122,9 @@ tracked in `bugs.md` until implementation and tests are complete.
 - Keep each implementation's methods in one file. With one implementation, keep
   its interface and methods together. With several, keep the interface in the
   main file and put each implementation in its own file.
+- Within a file, keep each struct declaration and its methods together as one
+  group. Do not interleave another struct declaration or its methods within that
+  group.
 - Order declarations as interface, constructor, public methods, then helpers.
   Put every parameter on its own line for signatures with four or more
   parameters, including interface methods.

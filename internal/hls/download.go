@@ -2,10 +2,10 @@ package hls
 
 import (
 	"context"
+	"dai/internal/http/client"
 	"dai/internal/pipeline"
 	"dai/internal/progress"
 	"fmt"
-	"net/http"
 	"os"
 )
 
@@ -28,7 +28,11 @@ func DownloadTSFiles(logger progress.Logger, expectedName string, playlist Varia
 	}
 
 	produceStage := newProduceStage(segmentMetas)
-	loadStage := newLoadStage()
+
+	httpClient := client.NewStreamingClient(nil)
+	defer httpClient.Close()
+
+	loadStage := newLoadStage(httpClient)
 	consumeStage, listOfFiles := newConsumeStage(logger, len(segmentMetas), &err)
 
 	pipeline := pipeline.NewPipeline()
@@ -74,12 +78,12 @@ func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage {
 	return pipeline.NewProduceStage(getNext)
 }
 
-func newLoadStage() pipeline.ProcessStage {
+func newLoadStage(httpClient client.StreamingClient) pipeline.ProcessStage {
 	return pipeline.NewProcessStage(func(meta segmentMeta) (segmentLoadResult, error) {
 		operationContext, cancel := context.WithTimeout(context.Background(), segmentDownloadTimeout)
 		defer cancel()
 
-		err := downloadSegment(operationContext, http.DefaultClient, meta, waitForSegmentRetry)
+		err := downloadSegment(operationContext, httpClient, meta, waitForSegmentRetry)
 		if err != nil {
 			return segmentLoadResult{segmentIndex: meta.index, err: err}, err
 		}

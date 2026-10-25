@@ -2,6 +2,8 @@ package rutube
 
 import (
 	"context"
+	"dai/internal/http/client"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,20 +46,12 @@ func newStatusBody(contents string) *statusResponseBody {
 	return &statusResponseBody{reader: reader}
 }
 
-func installStatusTransport(test *testing.T, transport http.RoundTripper) {
-	test.Helper()
-
-	originalClient := http.DefaultClient
-
-	test.Cleanup(func() {
-		http.DefaultClient = originalClient
-	})
-
-	http.DefaultClient = &http.Client{Transport: transport}
-}
-
 func TestVideoRejectsHTTPErrorBeforeParsing(test *testing.T) {
-	for _, status := range []int{http.StatusOK, http.StatusNotFound, http.StatusServiceUnavailable} {
+	for _, status := range []int{
+		http.StatusOK,
+		http.StatusNotFound,
+		http.StatusServiceUnavailable,
+	} {
 		test.Run(http.StatusText(status), func(test *testing.T) {
 			body := newStatusBody(retryVideoBody)
 			transport := retryTransport(func(request *http.Request) (*http.Response, error) {
@@ -69,9 +63,12 @@ func TestVideoRejectsHTTPErrorBeforeParsing(test *testing.T) {
 
 				return response, nil
 			})
-			installStatusTransport(test, transport)
+			httpClient := &http.Client{Transport: transport}
+			streamingClient := client.NewStreamingClient(httpClient)
+			test.Cleanup(streamingClient.Close)
+			reader := client.New(streamingClient)
 
-			info, err := getVideoInfo(context.Background(), retryVideoID)
+			info, err := getVideoInfoWithReader(context.Background(), reader, retryVideoID)
 			verifyStatusBody(test, status, body, err)
 
 			if status == http.StatusOK && info.MasterPlaylistLink == "" {
@@ -82,9 +79,17 @@ func TestVideoRejectsHTTPErrorBeforeParsing(test *testing.T) {
 }
 
 func TestPlaylistRejectsHTTPErrorAtEveryEndpoint(test *testing.T) {
-	for _, endpoint := range []string{retryPlaylistTitlePath, retryPlaylistVideosPath, retryPlaylistSecondPath} {
+	for _, endpoint := range []string{
+		retryPlaylistTitlePath,
+		retryPlaylistVideosPath,
+		retryPlaylistSecondPath,
+	} {
 		test.Run(endpoint, func(test *testing.T) {
-			for _, status := range []int{http.StatusOK, http.StatusNotFound, http.StatusServiceUnavailable} {
+			for _, status := range []int{
+				http.StatusOK,
+				http.StatusNotFound,
+				http.StatusServiceUnavailable,
+			} {
 				test.Run(http.StatusText(status), func(test *testing.T) {
 					bodies := make([]*statusResponseBody, 0)
 
@@ -117,9 +122,12 @@ func TestPlaylistRejectsHTTPErrorAtEveryEndpoint(test *testing.T) {
 
 						return response, nil
 					})
-					installStatusTransport(test, transport)
+					httpClient := &http.Client{Transport: transport}
+					streamingClient := client.NewStreamingClient(httpClient)
+					test.Cleanup(streamingClient.Close)
+					reader := client.New(streamingClient)
 
-					_, err := getPlaylistInfo(context.Background(), retryPlaylistID)
+					_, err := getPlaylistInfoWithReader(context.Background(), reader, retryPlaylistID)
 
 					if checkedBody == nil {
 						test.Fatal(statusUnrequestedEndpointMessage)
@@ -151,9 +159,14 @@ func TestMissingPlaylistCannotSucceed(test *testing.T) {
 
 		return response, nil
 	})
-	installStatusTransport(test, transport)
+	httpClient := &http.Client{Transport: transport}
+	streamingClient := client.NewStreamingClient(httpClient)
+	test.Cleanup(streamingClient.Close)
+	reader := client.New(streamingClient)
 
-	_, err := GetPlaylistInfo(retryPlaylistID)
+	provider := newMetadataProvider(reader)
+
+	_, err := provider.Playlist(context.Background(), retryPlaylistID)
 	if err == nil {
 		test.Fatal(statusMissingPlaylistSuccessMessage)
 	}
@@ -174,9 +187,12 @@ func TestVideoClosesMalformedSuccessBody(test *testing.T) {
 
 		return response, nil
 	})
-	installStatusTransport(test, transport)
+	httpClient := &http.Client{Transport: transport}
+	streamingClient := client.NewStreamingClient(httpClient)
+	test.Cleanup(streamingClient.Close)
+	reader := client.New(streamingClient)
 
-	_, err := getVideoInfo(context.Background(), retryVideoID)
+	_, err := getVideoInfoWithReader(context.Background(), reader, retryVideoID)
 	if err == nil || !body.closed {
 		test.Fatalf(statusBodyLifecycleFormat, body.reads, body.closed)
 	}
@@ -199,6 +215,11 @@ func verifyStatusBody(
 			test.Fatal(statusUnreadSuccessBodyMessage)
 		}
 	} else {
+		var statusError *client.StatusError
+		if !errors.As(err, &statusError) || statusError.Code != status {
+			test.Fatalf(statusUnexpectedErrorFormat, err, status)
+		}
+
 		expected := fmt.Sprintf(statusFailureFormat, status)
 		if err == nil || !strings.Contains(err.Error(), expected) {
 			test.Fatalf(statusUnexpectedErrorFormat, err, status)

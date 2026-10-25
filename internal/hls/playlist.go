@@ -2,11 +2,9 @@ package hls
 
 import (
 	"context"
-	"dai/internal/retry"
+	"dai/internal/http/client"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -15,8 +13,9 @@ import (
 const playlistRequestTimeout = 2 * time.Minute
 
 const (
-	mediaTag      = "#EXT-X-MEDIA:"
-	sessionKeyTag = "#EXT-X-SESSION-KEY:"
+	masterRequestErrorFormat = "cannot read master playlist: %w"
+	mediaTag                 = "#EXT-X-MEDIA:"
+	sessionKeyTag            = "#EXT-X-SESSION-KEY:"
 )
 
 const (
@@ -33,58 +32,29 @@ const (
 	masterHeader                        = "#EXTM3U"
 	iFramesOnlyTag                      = "#EXT-X-I-FRAMES-ONLY"
 	playlistResponseURLIsMissingMessage = "playlist response URL is missing"
-	masterRequestErrorFormat            = "cannot get m3u8: %w"
-	masterReadErrorFormat               = "cannot read body of m3u8: %w"
-	masterHTTPStatusErrorFormat         = "cannot get master playlist: HTTP %d"
 )
 
 func GetVariantPlaylists(masterPlaylistLink string) ([]VariantPlaylist, error) {
-	operationContext, cancel := context.WithTimeout(context.Background(), playlistRequestTimeout)
-	defer cancel()
+	httpClient := client.NewStreamingClient(nil)
+	defer httpClient.Close()
 
-	var result []VariantPlaylist
+	reader := client.New(httpClient)
+	provider := newPlaylistClient(reader)
 
-	err := retry.Do(operationContext, func(attemptContext context.Context) error {
-		var operationError error
-
-		result, operationError = getVariantPlaylists(attemptContext, masterPlaylistLink)
-
-		return operationError
-	})
-
-	return result, err
+	return provider.Variants(context.Background(), masterPlaylistLink)
 }
 
-func getVariantPlaylists(operationContext context.Context, masterPlaylistLink string) ([]VariantPlaylist, error) {
-	request, err := http.NewRequestWithContext(operationContext, http.MethodGet, masterPlaylistLink, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	response, err := http.DefaultClient.Do(request)
+func getVariantPlaylistsWithReader(
+	operationContext context.Context,
+	reader client.Client,
+	link string,
+) ([]VariantPlaylist, error) {
+	response, err := reader.Read(operationContext, link)
 	if err != nil {
 		return nil, fmt.Errorf(masterRequestErrorFormat, err)
 	}
 
-	defer func() {
-		_ = response.Body.Close()
-	}()
-
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf(masterHTTPStatusErrorFormat, response.StatusCode)
-	}
-
-	extM3UBytes, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, fmt.Errorf(masterReadErrorFormat, err)
-	}
-
-	baseURL := request.URL
-	if response.Request != nil && response.Request.URL != nil {
-		baseURL = response.Request.URL
-	}
-
-	return parseMasterPlaylist(string(extM3UBytes), baseURL)
+	return parseMasterPlaylist(string(response.Body), response.URL)
 }
 
 func parseMasterPlaylist(body string, baseURL *url.URL) ([]VariantPlaylist, error) {

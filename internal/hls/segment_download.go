@@ -2,6 +2,7 @@ package hls
 
 import (
 	"context"
+	"dai/internal/http/client"
 	"errors"
 	"fmt"
 	"io"
@@ -25,7 +26,7 @@ const (
 
 func downloadSegment(
 	operationContext context.Context,
-	client *http.Client,
+	httpClient client.StreamingClient,
 	meta segmentMeta,
 	wait func(context.Context, time.Duration) error,
 ) error {
@@ -35,7 +36,7 @@ func downloadSegment(
 		}
 
 		attemptContext, cancel := context.WithTimeout(operationContext, segmentAttemptTimeout)
-		retry, err := downloadSegmentAttempt(attemptContext, client, meta)
+		retry, err := downloadSegmentAttempt(attemptContext, httpClient, meta)
 
 		cancel()
 
@@ -55,13 +56,13 @@ func downloadSegment(
 	return nil
 }
 
-func downloadSegmentAttempt(operationContext context.Context, client *http.Client, meta segmentMeta) (bool, error) {
+func downloadSegmentAttempt(operationContext context.Context, httpClient client.StreamingClient, meta segmentMeta) (bool, error) {
 	request, err := http.NewRequestWithContext(operationContext, http.MethodGet, meta.link, nil)
 	if err != nil {
 		return false, err
 	}
 
-	response, err := client.Do(request)
+	response, err := httpClient.Do(request)
 	if err != nil {
 		return retryableSegmentTransfer(err), err
 	}

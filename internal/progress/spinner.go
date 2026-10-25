@@ -10,7 +10,12 @@ func SpinningMessage(logger Logger, message string, after string) func() {
 	done := make(chan struct{})
 
 	go func() {
-		frames := []string{"/", "-", "\\", "|"}
+		frames := []string{
+			"/",
+			"-",
+			"\\",
+			"|",
+		}
 
 		defer func() {
 			logger.UpdateWithSuffix(after)

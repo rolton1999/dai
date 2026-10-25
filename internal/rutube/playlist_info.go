@@ -1,12 +1,31 @@
 package rutube
 
 import (
+	"bytes"
 	"context"
-	"dai/internal/retry"
+	"dai/internal/http/client"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"net/http"
+	"net/url"
+	"strings"
+)
+
+const (
+	playlistPageLimit        = 10000
+	playlistResponseLimit    = 32 * 1024 * 1024
+	playlistCycleError       = "cyclic or excessive playlist pagination"
+	playlistSizeError        = "playlist metadata exceeds total size limit"
+	playlistMissingBaseError = "playlist response URL is missing"
+
+	playlistMissingStateMessage   = "playlist pagination state is missing"
+	playlistTitleErrorFormat      = "cannot read playlist title: %w"
+	playlistPageErrorFormat       = "cannot read playlist page %d: %w"
+	playlistMissingTitleMessage   = "playlist title is missing"
+	playlistMissingResultsMessage = "playlist results are missing"
+	playlistMissingNextMessage    = "playlist continuation URL is missing"
+	playlistMissingVideoIDMessage = "playlist video ID is missing"
 )
 
 type PlaylistInfo struct {
@@ -20,108 +39,116 @@ func (pi PlaylistInfo) String() string {
 }
 
 func GetPlaylistInfo(playlistID string) (PlaylistInfo, error) {
-	operationContext, cancel := context.WithTimeout(context.Background(), metadataRequestTimeout)
-	defer cancel()
+	httpClient := client.NewStreamingClient(nil)
+	defer httpClient.Close()
 
-	var result PlaylistInfo
+	reader := client.New(httpClient)
+	provider := newMetadataProvider(reader)
 
-	err := retry.Do(operationContext, func(attemptContext context.Context) error {
-		var operationError error
-
-		result, operationError = getPlaylistInfo(attemptContext, playlistID)
-
-		return operationError
-	})
-
-	return result, err
+	return provider.Playlist(context.Background(), playlistID)
 }
 
-func getPlaylistInfo(operationContext context.Context, playlistID string) (PlaylistInfo, error) {
+func getPlaylistInfoWithReader(
+	operationContext context.Context,
+	reader client.Client,
+	playlistID string,
+) (PlaylistInfo, error) {
 	const (
-		playlistApiURL        = "https://rutube.ru/api/playlist/custom/%s/?format=json"
-		playlistApiDetailsURL = "https://rutube.ru/api/playlist/custom/%s/videos/?format=json"
+		playlistAPI       = "https://rutube.ru/api/playlist/custom/%s/?format=json"
+		playlistVideosAPI = "https://rutube.ru/api/playlist/custom/%s/videos/?format=json"
 	)
 
-	request, err := http.NewRequestWithContext(operationContext, http.MethodGet, fmt.Sprintf(playlistApiURL, playlistID), nil)
+	titleLink := fmt.Sprintf(playlistAPI, url.PathEscape(playlistID))
+
+	response, err := reader.Read(operationContext, titleLink)
 	if err != nil {
-		return PlaylistInfo{}, err
+		return PlaylistInfo{}, fmt.Errorf(playlistTitleErrorFormat, err)
 	}
 
-	response, err := http.DefaultClient.Do(request)
+	titleReader := bytes.NewReader(response.Body)
+
+	title, err := parseTitleFromPlaylistApiResponse(titleReader)
 	if err != nil {
-		return PlaylistInfo{}, fmt.Errorf("cannot get playlist info: %w", err)
+		return PlaylistInfo{}, fmt.Errorf(playlistTitleErrorFormat, err)
 	}
 
-	if response.StatusCode != http.StatusOK {
-		_ = response.Body.Close()
-		return PlaylistInfo{}, fmt.Errorf(metadataHTTPStatusErrorFormat, response.StatusCode)
-	}
+	result := PlaylistInfo{Title: title}
+	next := fmt.Sprintf(playlistVideosAPI, url.PathEscape(playlistID))
+	seen := make(map[string]bool)
 
-	title, err := parseTitleFromPlaylistApiResponse(response.Body)
-	_ = response.Body.Close()
+	responseBytes := len(response.Body)
+	for next != "" {
+		if seen[next] || len(seen) >= playlistPageLimit {
+			return PlaylistInfo{}, errors.New(playlistCycleError)
+		}
 
-	if err != nil {
-		return PlaylistInfo{}, fmt.Errorf("cannot parse playlist title from api reponse: %w", err)
-	}
+		seen[next] = true
 
-	res := PlaylistInfo{Title: title}
-
-	next := fmt.Sprintf(playlistApiDetailsURL, playlistID)
-	for len(next) != 0 {
-		request, err = http.NewRequestWithContext(operationContext, http.MethodGet, next, nil)
+		response, err = reader.Read(operationContext, next)
 		if err != nil {
-			return PlaylistInfo{}, err
+			return PlaylistInfo{}, fmt.Errorf(playlistPageErrorFormat, len(seen), err)
 		}
 
-		response, err = http.DefaultClient.Do(request)
+		responseBytes += len(response.Body)
+		if responseBytes > playlistResponseLimit {
+			return PlaylistInfo{}, errors.New(playlistSizeError)
+		}
+
+		pageReader := bytes.NewReader(response.Body)
+
+		ids, reference, err := parseVideoIDsFromPlaylistApiResponse(pageReader)
 		if err != nil {
-			return PlaylistInfo{}, fmt.Errorf("cannot get playlist details: %w", err)
+			return PlaylistInfo{}, fmt.Errorf(playlistPageErrorFormat, len(seen), err)
 		}
 
-		if response.StatusCode != http.StatusOK {
-			_ = response.Body.Close()
-			return PlaylistInfo{}, fmt.Errorf(metadataHTTPStatusErrorFormat, response.StatusCode)
+		result.VideoIDs = append(result.VideoIDs, ids...)
+		next = ""
+
+		if reference != "" {
+			parsed, err := url.Parse(reference)
+			if err != nil {
+				return PlaylistInfo{}, err
+			}
+
+			if response.URL == nil {
+				return PlaylistInfo{}, errors.New(playlistMissingBaseError)
+			}
+
+			next = response.URL.ResolveReference(parsed).String()
 		}
-
-		var ids []string
-
-		ids, next, err = parseVideoIDsFromPlaylistApiResponse(response.Body)
-		_ = response.Body.Close()
-
-		if err != nil {
-			return PlaylistInfo{}, fmt.Errorf("cannot parse video IDs from api reponse: %w", err)
-		}
-
-		res.VideoIDs = append(res.VideoIDs, ids...)
 	}
 
-	return res, nil
+	return result, nil
 }
 
 func parseTitleFromPlaylistApiResponse(bodyReader io.Reader) (string, error) {
 	body, err := io.ReadAll(bodyReader)
 	if err != nil {
-		return "", fmt.Errorf("cannot read body: %w", err)
+		return "", fmt.Errorf(metadataReadErrorFormat, err)
 	}
 
 	type expectedBody struct {
 		Title string `json:"title"`
 	}
 
-	var eBody expectedBody
+	var metadata expectedBody
 
-	err = json.Unmarshal(body, &eBody)
+	err = json.Unmarshal(body, &metadata)
 	if err != nil {
-		return "", fmt.Errorf("cannot unmarshal body: %w", err)
+		return "", fmt.Errorf(metadataDecodeErrorFormat, err)
 	}
 
-	return eBody.Title, nil
+	if strings.TrimSpace(metadata.Title) == "" {
+		return "", errors.New(playlistMissingTitleMessage)
+	}
+
+	return metadata.Title, nil
 }
 
 func parseVideoIDsFromPlaylistApiResponse(bodyReader io.Reader) ([]string, string, error) {
 	body, err := io.ReadAll(bodyReader)
 	if err != nil {
-		return nil, "", fmt.Errorf("cannot read body: %w", err)
+		return nil, "", fmt.Errorf(metadataReadErrorFormat, err)
 	}
 
 	type result struct {
@@ -130,25 +157,41 @@ func parseVideoIDsFromPlaylistApiResponse(bodyReader io.Reader) ([]string, strin
 
 	type expectedBody struct {
 		Results []result `json:"results"`
-		HasNext bool     `json:"has_next"`
+		HasNext *bool    `json:"has_next"`
 		Next    string   `json:"next"`
 	}
 
-	var eBody expectedBody
+	var metadata expectedBody
 
-	err = json.Unmarshal(body, &eBody)
+	err = json.Unmarshal(body, &metadata)
 	if err != nil {
-		return nil, "", fmt.Errorf("cannot unmarshal body: %w", err)
+		return nil, "", fmt.Errorf(metadataDecodeErrorFormat, err)
 	}
 
-	ids := make([]string, 0, len(eBody.Results))
-	for _, r := range eBody.Results {
-		ids = append(ids, r.ID)
+	if metadata.Results == nil {
+		return nil, "", errors.New(playlistMissingResultsMessage)
+	}
+
+	if metadata.HasNext == nil {
+		return nil, "", errors.New(playlistMissingStateMessage)
+	}
+
+	if *metadata.HasNext && strings.TrimSpace(metadata.Next) == "" {
+		return nil, "", errors.New(playlistMissingNextMessage)
+	}
+
+	ids := make([]string, 0, len(metadata.Results))
+	for _, videoResult := range metadata.Results {
+		if strings.TrimSpace(videoResult.ID) == "" {
+			return nil, "", errors.New(playlistMissingVideoIDMessage)
+		}
+
+		ids = append(ids, videoResult.ID)
 	}
 
 	next := ""
-	if eBody.HasNext {
-		next = eBody.Next
+	if *metadata.HasNext {
+		next = metadata.Next
 	}
 
 	return ids, next, nil

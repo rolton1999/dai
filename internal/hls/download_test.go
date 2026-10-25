@@ -69,7 +69,10 @@ func TestDownloadTSFilesRequestsOnlySegments(test *testing.T) {
 				test.Fatalf("download failed: %v", err)
 			}
 
-			expectedBodies := []string{fixtureFirstSegmentBody, fixtureSecondSegmentBody}
+			expectedBodies := []string{
+				fixtureFirstSegmentBody,
+				fixtureSecondSegmentBody,
+			}
 			if len(files) != len(expectedBodies) {
 				test.Fatalf("expected %d segments, got %d", len(expectedBodies), len(files))
 			}
@@ -136,7 +139,10 @@ func TestDownloadTSFilesRecoversInterruptedSegment(test *testing.T) {
 		test.Fatal(err)
 	}
 
-	expectedBodies := []string{fixtureFirstSegmentBody, fixtureSecondSegmentBody}
+	expectedBodies := []string{
+		fixtureFirstSegmentBody,
+		fixtureSecondSegmentBody,
+	}
 	if len(files) != len(expectedBodies) {
 		test.Fatalf("expected %d complete segments, got %d", len(expectedBodies), len(files))
 	}
@@ -160,7 +166,11 @@ func TestDownloadTSFilesRejectsMalformedPlaylist(test *testing.T) {
 		invalidPlaylist   = "not a playlist"
 	)
 
-	for _, playlist := range []string{emptyPlaylist, truncatedPlaylist, invalidPlaylist} {
+	for _, playlist := range []string{
+		emptyPlaylist,
+		truncatedPlaylist,
+		invalidPlaylist,
+	} {
 		test.Run(playlist, func(test *testing.T) {
 			setFixtureClient(test, playlist, http.StatusOK)
 

@@ -48,7 +48,11 @@ func (logger *fixtureLogger) UpdateWithSuffix(suffix string) {
 }
 
 func TestConcatAcceptsColonAndOptionLikeOutputNames(test *testing.T) {
-	for _, name := range []string{fixturePlainOutput, fixtureColonOutput, fixtureHyphenOutput} {
+	for _, name := range []string{
+		fixturePlainOutput,
+		fixtureColonOutput,
+		fixtureHyphenOutput,
+	} {
 		test.Run(name, func(test *testing.T) {
 			workspace := test.TempDir()
 			test.Chdir(workspace)

@@ -2,6 +2,7 @@ package hls
 
 import (
 	"context"
+	"dai/internal/http/client"
 	"errors"
 	"io"
 	"net/http"
@@ -42,7 +43,11 @@ func (body segmentTestBody) Close() error {
 }
 
 func TestSegmentDownloadRetriesTransientFailures(test *testing.T) {
-	for _, failure := range []string{"unexpected EOF", "HTTP 502", "short content length"} {
+	for _, failure := range []string{
+		"unexpected EOF",
+		"HTTP 502",
+		"short content length",
+	} {
 		test.Run(failure, func(test *testing.T) {
 			attempts := 0
 			closedBodies := 0
@@ -73,13 +78,18 @@ func TestSegmentDownloadRetriesTransientFailures(test *testing.T) {
 				return response, nil
 			})
 
-			client := &http.Client{Transport: transport}
+			httpClient := &http.Client{Transport: transport}
+
+			streamingClient := client.NewStreamingClient(httpClient)
+
+			test.Cleanup(streamingClient.Close)
+
 			wait := func(_ context.Context, delay time.Duration) error {
 				delays = append(delays, delay)
 				return nil
 			}
 
-			if err := downloadSegment(context.Background(), client, meta, wait); err != nil {
+			if err := downloadSegment(context.Background(), streamingClient, meta, wait); err != nil {
 				test.Fatal(err)
 			}
 
@@ -116,13 +126,18 @@ func TestSegmentDownloadExhaustsRetriesAndRemovesPartialFile(test *testing.T) {
 		return response, nil
 	})
 
-	client := &http.Client{Transport: transport}
+	httpClient := &http.Client{Transport: transport}
+
+	streamingClient := client.NewStreamingClient(httpClient)
+
+	test.Cleanup(streamingClient.Close)
+
 	wait := func(_ context.Context, delay time.Duration) error {
 		delays = append(delays, delay)
 		return nil
 	}
 
-	err := downloadSegment(context.Background(), client, meta, wait)
+	err := downloadSegment(context.Background(), streamingClient, meta, wait)
 	if !errors.Is(err, io.ErrUnexpectedEOF) || attempts != segmentDownloadAttempts {
 		test.Fatalf("expected exhausted EOF retries, attempts=%d error=%v", attempts, err)
 	}
@@ -143,7 +158,10 @@ func TestSegmentDownloadExhaustsRetriesAndRemovesPartialFile(test *testing.T) {
 }
 
 func TestSegmentDownloadDoesNotRetryPermanentFailures(test *testing.T) {
-	for _, failure := range []string{"HTTP 404", "file creation"} {
+	for _, failure := range []string{
+		"HTTP 404",
+		"file creation",
+	} {
 		test.Run(failure, func(test *testing.T) {
 			attempts := 0
 			meta := segmentMeta{link: segmentTestURL, fileName: filepath.Join(test.TempDir(), segmentTestFileName)}
@@ -168,13 +186,18 @@ func TestSegmentDownloadDoesNotRetryPermanentFailures(test *testing.T) {
 				return response, nil
 			})
 
-			client := &http.Client{Transport: transport}
+			httpClient := &http.Client{Transport: transport}
+
+			streamingClient := client.NewStreamingClient(httpClient)
+
+			test.Cleanup(streamingClient.Close)
+
 			wait := func(context.Context, time.Duration) error {
 				test.Fatal("permanent failure scheduled a retry")
 				return nil
 			}
 
-			if err := downloadSegment(context.Background(), client, meta, wait); err == nil || attempts != 1 {
+			if err := downloadSegment(context.Background(), streamingClient, meta, wait); err == nil || attempts != 1 {
 				test.Fatalf("expected one failed attempt, got %d and error %v", attempts, err)
 			}
 		})
@@ -201,13 +224,18 @@ func TestSegmentDownloadCancelsDuringBackoff(test *testing.T) {
 		return response, nil
 	})
 
-	client := &http.Client{Transport: transport}
+	httpClient := &http.Client{Transport: transport}
+
+	streamingClient := client.NewStreamingClient(httpClient)
+
+	test.Cleanup(streamingClient.Close)
+
 	wait := func(operationContext context.Context, delay time.Duration) error {
 		cancel()
 		return waitForSegmentRetry(operationContext, delay)
 	}
 
-	if err := downloadSegment(operationContext, client, meta, wait); !errors.Is(err, context.Canceled) || attempts != 1 {
+	if err := downloadSegment(operationContext, streamingClient, meta, wait); !errors.Is(err, context.Canceled) || attempts != 1 {
 		test.Fatalf("expected cancellation after one attempt, got %d and error %v", attempts, err)
 	}
 }
