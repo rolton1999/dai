@@ -10,7 +10,7 @@ Requires Go 1.25 or later to build, and `ffmpeg` and `ffprobe` on `PATH` to run.
 ```sh
 make build
 ./bin/dai https://rutube.ru/video/dace2feac379872d42e49b6b25c0587a/
-./bin/dai --jobs 4 --output ./videos https://rutube.ru/plst/1840659/
+./bin/dai --resume --jobs 4 --output ./videos https://rutube.ru/plst/1840659/
 ```
 
 Flags must precede the URL:
@@ -19,6 +19,7 @@ Flags must precede the URL:
 | --- | --- |
 | `--output <directory>` | Destination directory; defaults to the current directory. |
 | `--jobs <count>` | Concurrent playlist videos; defaults to 4. Use 1 for sequential downloads. |
+| `--resume` | Record playlist progress and reuse verified completed MP4s on restart. |
 | `--overwrite` | Allow replacing existing output files. |
 
 Accepts HTTPS links on `rutube.ru` with `/video/<32 hex ID>` or
@@ -48,6 +49,17 @@ available if a later download fails. Network retries have bounded deadlines;
 Ctrl-C or the first failure stops scheduling and cancels active work; all workers
 finish cleanup before exit.
 
+Use `--resume` from the first playlist run, then repeat the command with the same
+output directory after interruption. DAI keeps a versioned
+`.dai-playlist-<ID>.json` manifest and a `.lock` file there. It verifies recorded
+MP4s by size and SHA-256, skips matches, and downloads missing or unfinished videos
+from the beginning. Fragments are never reused. Recorded filenames remain stable
+if titles change. Changed, untracked, or symlink outputs cause an error and are
+preserved; move conflicting files aside to continue. Resume is playlist-only and
+cannot combine with `--overwrite`. The lock prevents concurrent resume runs for
+the same playlist and releases automatically on process exit. Keep the manifest
+with the downloaded files; completed runs retain it for future reuse.
+
 Supports complete, unencrypted MPEG-TS HLS playlists in segment order. Resolution
 determines variant selection; bandwidth breaks ties. Relative URLs resolve after
 redirects. Separate media tracks, encryption, byte ranges, initialization maps,
@@ -64,14 +76,19 @@ make test-integration  # Local HTTP fixtures and real FFmpeg/FFprobe
 
 Tests cover parsing, retries, cancellation, worker shutdown, output collisions,
 concurrent publication, playlist worker limits and slot reuse, cancellation
-cleanup, and independent progress rows, with fuzz targets for both HLS parsers.
+cleanup, independent progress rows, and playlist recovery after interruption.
+Both HLS parsers have fuzz targets.
+Recovery tests cover output checksums, stable filenames, invalid manifests,
+checkpoint failures, and lock release after process termination.
 Integration tests cover redirects, segment downloads, conversion, MP4 validation,
 unusual filenames, and failure reporting. CI runs lint and unit tests; integration
 tests run locally on demand.
 
 Live checksum tests are opt-in: `make e2e-single`, `make e2e-playlist` (one job),
-and `make e2e-playlist-parallel` (four jobs).
+`make e2e-playlist-parallel` (four jobs), and `make e2e-playlist-resume`
+(restart recovery with four jobs).
 `make test-all` runs all suites, stopping on failure. See
 [live test requirements and reference checksums](tests/e2e/README.md).
 Local fixtures do not establish live Rutube compatibility; live checksum tests
-have not been rerun against the current implementation.
+have not been rerun against the current implementation. Windows resume behavior
+has been cross-compiled but not tested at runtime.

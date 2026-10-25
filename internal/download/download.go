@@ -60,6 +60,7 @@ type Options struct {
 	Jobs            int
 	OutputDirectory string
 	Overwrite       bool
+	Resume          bool
 }
 
 type Service interface {
@@ -88,6 +89,10 @@ type serviceImpl struct {
 }
 
 func (service *serviceImpl) Video(operationContext context.Context, videoID string, options Options) error {
+	if options.Resume {
+		return errors.New(resumeOnlyPlaylistMessage)
+	}
+
 	info, err := service.provider.Video(operationContext, videoID)
 	if err != nil {
 		return err
@@ -103,10 +108,14 @@ func (service *serviceImpl) Video(operationContext context.Context, videoID stri
 		return err
 	}
 
-	return service.download(operationContext, info, target, options.Overwrite, service.logger)
+	return service.download(operationContext, info, target, options.Overwrite, service.logger, nil)
 }
 
-func (service *serviceImpl) Playlist(operationContext context.Context, playlistID string, options Options) error {
+func (service *serviceImpl) Playlist(operationContext context.Context, playlistID string, options Options) (resultError error) {
+	if options.Resume && options.Overwrite {
+		return errors.New(resumeOverwriteMessage)
+	}
+
 	if options.Jobs < 0 {
 		return errors.New(invalidJobsMessage)
 	}
@@ -121,23 +130,56 @@ func (service *serviceImpl) Playlist(operationContext context.Context, playlistI
 		return err
 	}
 
+	var recovery *playlistRecovery
+	if options.Resume {
+		recovery, err = newPlaylistRecovery(directory, playlistID)
+		if err != nil {
+			return err
+		}
+
+		defer func() {
+			resultError = errors.Join(resultError, recovery.Close())
+		}()
+	}
+
 	infos := make([]rutube.VideoInfo, 0, len(playlist.VideoIDs))
 	targets := make([]string, 0, len(playlist.VideoIDs))
 	seen := make(map[string]bool)
 
 	for _, videoID := range playlist.VideoIDs {
-		info, err := service.provider.Video(operationContext, videoID)
+		complete, err := recovery.inspect(operationContext, videoID)
 		if err != nil {
 			return err
 		}
 
-		target := filepath.Join(directory, safeFilename(info.Title))
+		var info rutube.VideoInfo
+		if complete {
+			info.Title = strings.TrimSuffix(recovery.filename(videoID), outputExtension)
+		} else {
+			info, err = service.provider.Video(operationContext, videoID)
+			if err != nil {
+				return err
+			}
+		}
+
+		filename := recovery.filename(videoID)
+		if filename == "" {
+			filename = safeFilename(info.Title)
+		}
+
+		target := filepath.Join(directory, filename)
 		if seen[target] {
 			return fmt.Errorf(duplicatePlaylistOutputFormat, target)
 		}
 
 		seen[target] = true
-		if err := checkDestination(target, options.Overwrite); err != nil {
+		if !complete {
+			if err := checkDestination(target, options.Overwrite); err != nil {
+				return err
+			}
+		}
+
+		if err := recovery.add(videoID, filename); err != nil {
 			return err
 		}
 
@@ -145,7 +187,11 @@ func (service *serviceImpl) Playlist(operationContext context.Context, playlistI
 		targets = append(targets, target)
 	}
 
-	return service.downloadPlaylist(operationContext, infos, targets, options)
+	if err := recovery.save(); err != nil {
+		return err
+	}
+
+	return service.downloadPlaylist(operationContext, infos, targets, options, recovery)
 }
 
 func (service *serviceImpl) downloadPlaylist(
@@ -153,6 +199,7 @@ func (service *serviceImpl) downloadPlaylist(
 	infos []rutube.VideoInfo,
 	targets []string,
 	options Options,
+	recovery *playlistRecovery,
 ) error {
 	jobs := options.Jobs
 	if jobs == 0 {
@@ -189,7 +236,14 @@ func (service *serviceImpl) downloadPlaylist(
 
 				logger := display.Item(slot, index)
 
-				err := service.download(operationContext, infos[index], targets[index], options.Overwrite, logger)
+				var err error
+
+				if recovery.isComplete(targets[index]) {
+					logger.NewPrefix(filepath.Base(targets[index]))
+				} else {
+					err = service.download(operationContext, infos[index], targets[index], options.Overwrite, logger, recovery)
+				}
+
 				if err != nil {
 					cancel(fmt.Errorf(playlistVideoErrorFormat, index+1, infos[index].Title, err))
 				}
@@ -214,6 +268,7 @@ func (service *serviceImpl) download(
 	target string,
 	overwrite bool,
 	logger progress.Logger,
+	recovery *playlistRecovery,
 ) (resultError error) {
 	operationContext, cancel := context.WithTimeout(operationContext, videoTimeout)
 	defer cancel()
@@ -268,6 +323,10 @@ func (service *serviceImpl) download(
 
 	if !infoOnDisk.Mode().IsRegular() || infoOnDisk.Size() == 0 {
 		return errors.New(converterDidNotProduceANonemptyFileMessage)
+	}
+
+	if err := recovery.prepare(operationContext, target, staging); err != nil {
+		return err
 	}
 
 	if overwrite {
