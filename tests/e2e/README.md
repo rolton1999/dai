@@ -7,10 +7,18 @@ Run these targets from the project root:
 | `make e2e-single` | Single video with `--jobs 1`. |
 | `make e2e-playlist` | Sequential playlist with `--jobs 1`. |
 | `make e2e-playlist-parallel` | Concurrent playlist with `--jobs 4`. |
+| `make e2e-playlist-resume` | Playlist recovery across two processes with `--resume --jobs 4`. |
 
-`make e2e` runs all three. Both playlist modes verify the same reference checksums
+`make e2e` runs all four. All playlist modes verify the same reference checksums
 in separate temporary directories. The concurrent test checks completed outputs;
 unit tests independently verify the worker limit and immediate slot reuse.
+
+The resume target first downloads and checksums the playlist, then removes one
+MP4 inside its temporary directory and starts DAI again with the same manifest.
+It verifies that the missing video is restored, every output matches the original
+checksums, and the retained MP4s keep their original inodes. Interruption during
+active downloads is covered by deterministic tests; this live test exercises
+restart with a partially present set of completed files. It never resumes segments.
 
 Each target streams download/conversion progress and checksum results directly
 to the terminal and finishes with `E2E single: PASSED` or `E2E playlist-parallel: FAILED`

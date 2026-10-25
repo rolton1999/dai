@@ -4,6 +4,7 @@ package ffmpeg_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,67 @@ import (
 
 	"dai/internal/ffmpeg"
 )
+
+const (
+	corruptSegmentName   = "corrupt.ts"
+	corruptMiddleCase    = "middle"
+	corruptLastCase      = "last"
+	corruptPartialOutput = "corrupt segment published a partial output: %v"
+	corruptArtifacts     = "conversion left unexpected artifacts: %v, %v"
+	corruptInputCount    = 2
+)
+
+func TestConcatRejectsCorruptSegmentsAfterValidInput(test *testing.T) {
+	for _, position := range []string{corruptMiddleCase, corruptLastCase} {
+		test.Run(position, func(test *testing.T) {
+			operationContext, cancel := context.WithTimeout(test.Context(), fixtureTimeout)
+			defer cancel()
+
+			directory := test.TempDir()
+			goodSegment := filepath.Join(directory, fixtureSegmentName)
+			badSegment := filepath.Join(directory, corruptSegmentName)
+			output := filepath.Join(directory, fixturePlainOutput)
+
+			arguments := append(strings.Fields(fixtureGenerateArguments), goodSegment)
+
+			command := exec.CommandContext(operationContext, fixtureFFmpeg, arguments...)
+			if diagnostics, err := command.CombinedOutput(); err != nil {
+				test.Fatalf(fixtureGenerateError, err, diagnostics)
+			}
+
+			if err := os.WriteFile(badSegment, []byte(fixtureInvalidData), fixturePermissions); err != nil {
+				test.Fatal(err)
+			}
+
+			segments := []string{goodSegment, badSegment}
+			if position == corruptMiddleCase {
+				segments = append(segments, goodSegment)
+			}
+
+			converter := ffmpeg.New(nil)
+
+			logger := &fixtureLogger{}
+			if err := converter.Convert(operationContext, logger, segments, output); err == nil {
+				test.Fatal(fixtureFalseSuccessError)
+			}
+
+			if _, err := os.Lstat(output); !errors.Is(err, os.ErrNotExist) {
+				test.Fatalf(corruptPartialOutput, err)
+			}
+
+			entries, err := os.ReadDir(directory)
+			if err != nil || len(entries) != corruptInputCount {
+				test.Fatalf(corruptArtifacts, entries, err)
+			}
+
+			for _, segment := range []string{goodSegment, badSegment} {
+				if _, err := os.Stat(segment); err != nil {
+					test.Fatalf(fixtureInputRemovedError, err)
+				}
+			}
+		})
+	}
+}
 
 const (
 	fixtureTimeout           = 30 * time.Second

@@ -15,6 +15,8 @@ const (
 	downloadServiceIsRequiredMessage    = "download service is required"
 	expectedExactlyOneURLMessage        = "expected exactly one URL"
 	invalidJobsMessage                  = "jobs must be greater than zero"
+	resumeOnlyPlaylistMessage           = "resume is supported only for playlists"
+	resumeOverwriteMessage              = "resume cannot be combined with overwrite"
 )
 
 const (
@@ -22,6 +24,8 @@ const (
 	outputFlag    = "output"
 	overwriteFlag = "overwrite"
 	jobsFlag      = "jobs"
+	resumeFlag    = "resume"
+	resumeHelp    = "resume a playlist using recorded completed outputs"
 	jobsHelp      = "maximum concurrent playlist videos"
 	outputHelp    = "directory for downloaded videos"
 	overwriteHelp = "replace existing output files"
@@ -59,6 +63,8 @@ func (command *commandImpl) Run(operationContext context.Context, arguments []st
 
 	jobs := flags.Int(jobsFlag, download.DefaultJobs, jobsHelp)
 
+	resume := flags.Bool(resumeFlag, false, resumeHelp)
+
 	overwrite := flags.Bool(overwriteFlag, false, overwriteHelp)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -86,7 +92,15 @@ func (command *commandImpl) Run(operationContext context.Context, arguments []st
 		return err
 	}
 
-	options := download.Options{Jobs: *jobs, OutputDirectory: *directory, Overwrite: *overwrite}
+	if *resume && *overwrite {
+		return errors.New(resumeOverwriteMessage)
+	}
+
+	if *resume && kind != playlist {
+		return errors.New(resumeOnlyPlaylistMessage)
+	}
+
+	options := download.Options{Resume: *resume, Jobs: *jobs, OutputDirectory: *directory, Overwrite: *overwrite}
 	if kind == singleVideo {
 		return command.service.Video(operationContext, contentID, options)
 	}

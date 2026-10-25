@@ -126,3 +126,45 @@ func TestInvalidJobsNeverDispatches(test *testing.T) {
 		})
 	}
 }
+
+const (
+	cliResumeFlag            = "--resume"
+	cliResumeAcceptedInvalid = "invalid resume options dispatched a download: %v"
+)
+
+func TestResumePlaylistDispatchesOptions(test *testing.T) {
+	service := &fixtureService{}
+
+	command, err := New(service)
+	if err != nil {
+		test.Fatal(err)
+	}
+
+	arguments := []string{cliResumeFlag, cliJobsFlag, cliJobsSingle, cliPlaylistURL}
+	if err := command.Run(test.Context(), arguments); err != nil {
+		test.Fatal(err)
+	}
+
+	if service.kind != playlist || !service.options.Resume || service.options.Jobs != 1 {
+		test.Fatalf(cliTestBadDispatch, service)
+	}
+}
+
+func TestResumeRejectsSingleVideoAndOverwrite(test *testing.T) {
+	fixtures := [][]string{
+		{cliResumeFlag, cliTestHttpsRutubeRuVideo + fixtureVideoID},
+		{cliResumeFlag, cliTestOverwrite, cliPlaylistURL},
+	}
+	for _, arguments := range fixtures {
+		service := &fixtureService{}
+
+		command, err := New(service)
+		if err != nil {
+			test.Fatal(err)
+		}
+
+		if err := command.Run(test.Context(), arguments); err == nil || service.kind != notExpected {
+			test.Fatalf(cliResumeAcceptedInvalid, arguments)
+		}
+	}
+}
