@@ -33,11 +33,13 @@ const (
 )
 
 const (
-	defaultOutputDirectory = "."
-	outputExtension        = ".mp4"
-	outputNameLimit        = 200
-	videoTimeout           = 30 * time.Minute
-	outputWorkspacePattern = ".dai-output-*"
+	defaultOutputDirectory     = "."
+	outputExtension            = ".mp4"
+	outputNameLimit            = 200
+	videoTimeout               = 30 * time.Minute
+	outputWorkspacePattern     = ".dai-output-*"
+	outputPlanWorkspacePattern = ".dai-plan-*"
+	outputPlanFilePermissions  = 0o600
 )
 
 const (
@@ -185,6 +187,10 @@ func (service *serviceImpl) Playlist(operationContext context.Context, playlistI
 
 		infos = append(infos, info)
 		targets = append(targets, target)
+	}
+
+	if err := checkPlaylistFilenames(operationContext, directory, targets); err != nil {
+		return err
 	}
 
 	if err := recovery.save(); err != nil {
@@ -371,6 +377,42 @@ func checkDestination(path string, overwrite bool) error {
 
 	if info.IsDir() || !overwrite {
 		return fmt.Errorf(outputAlreadyExistsFormat, path)
+	}
+
+	return nil
+}
+
+func checkPlaylistFilenames(operationContext context.Context, directory string, targets []string) (resultError error) {
+	workspace, err := os.MkdirTemp(directory, outputPlanWorkspacePattern)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		resultError = errors.Join(resultError, os.RemoveAll(workspace))
+	}()
+
+	// Exclusive creation detects aliases using the destination filesystem's
+	// case and Unicode rules without touching existing output files.
+	for _, target := range targets {
+		if err := operationContext.Err(); err != nil {
+			return err
+		}
+
+		probe := filepath.Join(workspace, filepath.Base(target))
+
+		file, err := os.OpenFile(probe, os.O_CREATE|os.O_EXCL|os.O_WRONLY, outputPlanFilePermissions)
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf(duplicatePlaylistOutputFormat, target)
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if err := file.Close(); err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -42,9 +42,12 @@ with an underscore. Names are limited to 200 UTF-8 bytes before `.mp4`;
 empty names become `video.mp4`.
 
 Existing destinations require `--overwrite`. Duplicate playlist filenames are
-rejected before downloading, even with overwrite enabled. Each MP4 is validated
-with FFprobe before atomic publication. Failures remove operation-owned temporary
-files and preserve existing destinations; completed playlist videos remain
+rejected before downloading, even with overwrite enabled. Collision checks use
+the destination filesystem's case and Unicode normalization rules. Each MP4 is
+validated with FFprobe before atomic publication. FFmpeg input and conversion
+errors fail the operation, including corrupt segments after valid input.
+Failures remove operation-owned temporary files and preserve existing
+destinations; completed playlist videos remain
 available if a later download fails. Network retries have bounded deadlines;
 Ctrl-C or the first failure stops scheduling and cancels active work; all workers
 finish cleanup before exit.
@@ -74,7 +77,8 @@ make test              # Race-enabled tests; no Rutube or FFmpeg required
 make test-integration  # Local HTTP fixtures and real FFmpeg/FFprobe
 ```
 
-Tests cover parsing, retries, cancellation, worker shutdown, output collisions,
+Tests cover parsing, retries, cancellation, worker shutdown, output collisions
+under the host filesystem's case and Unicode normalization rules,
 concurrent publication, playlist worker limits and slot reuse, cancellation
 cleanup, independent progress rows, and playlist recovery after interruption.
 Both HLS parsers have fuzz targets.
@@ -82,8 +86,8 @@ Recovery tests cover output checksums, stable filenames, invalid manifests,
 generated filenames truncated at dots, spaces, and UTF-8 boundaries, checkpoint
 failures, and lock release after process termination.
 Integration tests cover redirects, segment downloads, conversion, MP4 validation,
-unusual filenames, and failure reporting. CI runs lint and unit tests; integration
-tests run locally on demand.
+unusual filenames, corrupt middle and final segments, and failure reporting.
+CI runs lint and unit tests; integration tests run locally on demand.
 
 Live checksum tests are opt-in: `make e2e-single`, `make e2e-playlist` (one job),
 `make e2e-playlist-parallel` (four jobs), and `make e2e-playlist-resume`

@@ -17,6 +17,7 @@ import (
 const (
 	noStdinFlag         = "-nostdin"
 	noOverwriteFlag     = "-n"
+	failOnErrorFlag     = "-xerror"
 	inputFormatFlag     = "-f"
 	concatFormat        = "concat"
 	concatSafetyFlag    = "-safe"
@@ -290,7 +291,7 @@ func writeConcatManifest(manifest *os.File, segments []string) error {
 
 func conversionArguments(manifestPath string, stagedPath string) []string {
 	return []string{
-		noStdinFlag, noOverwriteFlag,
+		noStdinFlag, noOverwriteFlag, failOnErrorFlag,
 		inputFormatFlag, concatFormat,
 		concatSafetyFlag, allowAbsolutePaths,
 		inputFlag, manifestPath,
