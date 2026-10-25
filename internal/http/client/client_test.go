@@ -124,18 +124,34 @@ func (doer *blockingDoer) Do(request *http.Request) (*http.Response, error) {
 func TestReadCancelsStalledRequest(test *testing.T) {
 	const cancellationDeadline = time.Second
 
-	doer := &blockingDoer{started: make(chan struct{}), finished: make(chan struct{})}
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	doer := &blockingDoer{started: started, finished: finished}
 
 	operationContext, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	result := make(chan error, 1)
+	done := make(chan struct{})
 
 	go func() {
+		defer close(done)
+
 		client := New(doer)
 
 		_, err := client.Read(operationContext, fixtureURL)
 		result <- err
+	}()
+
+	defer func() {
+		cancel()
+
+		cleanupTimer := time.NewTimer(cancellationDeadline)
+		defer cleanupTimer.Stop()
+
+		select {
+		case <-done:
+		case <-cleanupTimer.C:
+			test.Error(readRequestActiveMessage)
+		}
 	}()
 
 	timer := time.NewTimer(cancellationDeadline)

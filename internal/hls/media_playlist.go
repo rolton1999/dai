@@ -43,11 +43,15 @@ const (
 	mediaSegmentExtension        = ".ts"
 	mediaSegmentSeparator        = "_"
 	mediaPlaylistSegmentURLError = "cannot parse segment URI: %w"
+	mediaRequestErrorFormat      = "cannot read media playlist: %w"
 	mediaPlaylistEmptyError      = "media playlist has no segments"
 )
 
 func collectSegmentMetas(playlist VariantPlaylist, directoryName, resultName string) ([]segmentMeta, error) {
-	reader := client.New(nil)
+	httpClient := client.NewStreamingClient()
+	defer httpClient.CloseIdleConnections()
+
+	reader := client.New(httpClient)
 
 	operationContext, cancel := context.WithTimeout(context.Background(), playlistRequestTimeout)
 	defer cancel()
@@ -74,7 +78,7 @@ func collectSegmentMetasOnce(
 ) ([]segmentMeta, error) {
 	response, err := reader.Read(operationContext, playlist.Link)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(mediaRequestErrorFormat, err)
 	}
 
 	baseURL := response.URL

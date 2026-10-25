@@ -28,6 +28,11 @@ type StreamingClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
+type ManagedStreamingClient interface {
+	StreamingClient
+	CloseIdleConnections()
+}
+
 type Response struct {
 	Body []byte
 
@@ -41,14 +46,10 @@ type Client interface {
 }
 
 func New(httpClient StreamingClient) Client {
-	if httpClient == nil {
-		httpClient = NewStreamingClient()
-	}
-
 	return &clientImpl{httpClient: httpClient}
 }
 
-func NewStreamingClient() StreamingClient {
+func NewStreamingClient() ManagedStreamingClient {
 	client := *http.DefaultClient
 	if client.Timeout <= 0 || client.Timeout > requestTimeout {
 		client.Timeout = requestTimeout

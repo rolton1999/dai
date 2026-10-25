@@ -12,10 +12,6 @@ type metadataProvider interface {
 }
 
 func newMetadataProvider(reader client.Client) metadataProvider {
-	if reader == nil {
-		reader = client.New(nil)
-	}
-
 	return &metadataClient{reader: reader}
 }
 

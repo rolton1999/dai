@@ -28,7 +28,11 @@ func DownloadTSFiles(logger progress.Logger, expectedName string, playlist Varia
 	}
 
 	produceStage := newProduceStage(segmentMetas)
-	loadStage := newLoadStage()
+
+	httpClient := client.NewStreamingClient()
+	defer httpClient.CloseIdleConnections()
+
+	loadStage := newLoadStage(httpClient)
 	consumeStage, listOfFiles := newConsumeStage(logger, len(segmentMetas), &err)
 
 	pipeline := pipeline.NewPipeline()
@@ -74,9 +78,7 @@ func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage {
 	return pipeline.NewProduceStage(getNext)
 }
 
-func newLoadStage() pipeline.ProcessStage {
-	httpClient := client.NewStreamingClient()
-
+func newLoadStage(httpClient client.StreamingClient) pipeline.ProcessStage {
 	return pipeline.NewProcessStage(func(meta segmentMeta) (segmentLoadResult, error) {
 		operationContext, cancel := context.WithTimeout(context.Background(), segmentDownloadTimeout)
 		defer cancel()

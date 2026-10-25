@@ -4,6 +4,7 @@ import (
 	"context"
 	"dai/internal/http/client"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -12,8 +13,9 @@ import (
 const playlistRequestTimeout = 2 * time.Minute
 
 const (
-	mediaTag      = "#EXT-X-MEDIA:"
-	sessionKeyTag = "#EXT-X-SESSION-KEY:"
+	masterRequestErrorFormat = "cannot read master playlist: %w"
+	mediaTag                 = "#EXT-X-MEDIA:"
+	sessionKeyTag            = "#EXT-X-SESSION-KEY:"
 )
 
 const (
@@ -33,13 +35,13 @@ const (
 )
 
 func GetVariantPlaylists(masterPlaylistLink string) ([]VariantPlaylist, error) {
-	client := newPlaylistClient(nil)
-	return client.Variants(context.Background(), masterPlaylistLink)
-}
+	httpClient := client.NewStreamingClient()
+	defer httpClient.CloseIdleConnections()
 
-func getVariantPlaylists(operationContext context.Context, link string) ([]VariantPlaylist, error) {
-	reader := client.New(nil)
-	return getVariantPlaylistsWithReader(operationContext, reader, link)
+	reader := client.New(httpClient)
+	provider := newPlaylistClient(reader)
+
+	return provider.Variants(context.Background(), masterPlaylistLink)
 }
 
 func getVariantPlaylistsWithReader(
@@ -49,7 +51,7 @@ func getVariantPlaylistsWithReader(
 ) ([]VariantPlaylist, error) {
 	response, err := reader.Read(operationContext, link)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(masterRequestErrorFormat, err)
 	}
 
 	return parseMasterPlaylist(string(response.Body), response.URL)

@@ -2,6 +2,7 @@ package hls
 
 import (
 	"context"
+	"dai/internal/http/client"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,12 +41,6 @@ func TestMasterRejectsHTTPErrorBeforeParsing(test *testing.T) {
 		http.StatusServiceUnavailable,
 	} {
 		test.Run(http.StatusText(status), func(test *testing.T) {
-			originalClient := http.DefaultClient
-
-			test.Cleanup(func() {
-				http.DefaultClient = originalClient
-			})
-
 			reader := strings.NewReader(masterFixtureBody)
 			body := &masterStatusBody{reader: reader}
 			transport := masterTransport(func(request *http.Request) (*http.Response, error) {
@@ -57,9 +52,10 @@ func TestMasterRejectsHTTPErrorBeforeParsing(test *testing.T) {
 
 				return response, nil
 			})
-			http.DefaultClient = &http.Client{Transport: transport}
+			httpClient := &http.Client{Transport: transport}
+			playlistReader := client.New(httpClient)
 
-			_, err := getVariantPlaylists(context.Background(), masterFixtureURL)
+			_, err := getVariantPlaylistsWithReader(context.Background(), playlistReader, masterFixtureURL)
 			if status == http.StatusOK {
 				if err != nil {
 					test.Fatalf(masterHTTPFailureFormat, err, status)

@@ -2,6 +2,7 @@ package rutube
 
 import (
 	"context"
+	"dai/internal/http/client"
 	"errors"
 	"fmt"
 	"net/http"
@@ -36,10 +37,13 @@ const (
 	metadataUnexpectedPageFormat  = "ids=%v next=%q error=%v"
 	metadataReadFailureMessage    = "fixture interrupted metadata read"
 	metadataEmptyPage             = `{"results":[],"has_next":false}`
+	metadataMissingState          = `{"results":[{"id":"first"}],"next":"?page=2"}`
+	metadataNullState             = `{"results":[{"id":"first"}],"has_next":null,"next":"?page=2"}`
+	metadataMissingEmptyState     = `{"results":[]}`
 	metadataNullResults           = `{"results":null}`
-	metadataMissingVideoID        = `{"results":[{}]}`
-	metadataEmptyVideoID          = `{"results":[{"id":""}]}`
-	metadataBlankVideoID          = `{"results":[{"id":" \t"}]}`
+	metadataMissingVideoID        = `{"results":[{}],"has_next":false}`
+	metadataEmptyVideoID          = `{"results":[{"id":""}],"has_next":false}`
+	metadataBlankVideoID          = `{"results":[{"id":" \t"}],"has_next":false}`
 	metadataMissingNext           = `{"results":[{"id":"first"}],"has_next":true}`
 	metadataBlankNext             = `{"results":[{"id":"first"}],"has_next":true,"next":" \t"}`
 	metadataFinalPage             = `{"results":[{"id":"first"}],"has_next":false,"next":"stale"}`
@@ -123,6 +127,9 @@ func TestPlaylistPagesRequireResultsIDsAndContinuation(test *testing.T) {
 		metadataNullObject,
 		metadataMalformedJSON,
 		metadataNullResults,
+		metadataMissingState,
+		metadataNullState,
+		metadataMissingEmptyState,
 		metadataMissingVideoID,
 		metadataEmptyVideoID,
 		metadataBlankVideoID,
@@ -198,13 +205,14 @@ func TestHTTP200ErrorJSONIsNotSuccessfulMetadata(test *testing.T) {
 
 				return response, nil
 			})
-			installStatusTransport(test, transport)
+			httpClient := &http.Client{Transport: transport}
+			reader := client.New(httpClient)
 
 			var err error
 			if playlist {
-				_, err = getPlaylistInfo(context.Background(), retryPlaylistID)
+				_, err = getPlaylistInfoWithReader(context.Background(), reader, retryPlaylistID)
 			} else {
-				_, err = getVideoInfo(context.Background(), retryVideoID)
+				_, err = getVideoInfoWithReader(context.Background(), reader, retryVideoID)
 			}
 
 			if err == nil {

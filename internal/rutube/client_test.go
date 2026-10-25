@@ -5,6 +5,7 @@ import (
 	"dai/internal/http/client"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -190,5 +191,66 @@ func TestInjectedPlaylistResolvesRelativeNextAfterRedirect(test *testing.T) {
 	info, err := provider.Playlist(context.Background(), retryPlaylistID)
 	if err != nil || len(info.VideoIDs) != expectedVideos || info.VideoIDs[0] != metadataFirstID {
 		test.Fatalf(clientRelativeErrorFormat, info, err)
+	}
+}
+
+type ownedMetadataTransport struct {
+	closed bool
+}
+
+func (transport *ownedMetadataTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	contents := retryVideoBody
+
+	switch request.URL.Path {
+	case retryPlaylistTitlePath:
+		contents = retryPlaylistTitleBody
+	case retryPlaylistVideosPath:
+		contents = metadataEmptyPage
+	}
+
+	reader := strings.NewReader(contents)
+	body := io.NopCloser(reader)
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       body,
+		Request:    request,
+	}
+
+	return response, nil
+}
+
+func (transport *ownedMetadataTransport) CloseIdleConnections() {
+	transport.closed = true
+}
+
+func TestMetadataOperationsCloseIdleConnections(test *testing.T) {
+	const cleanupError = "metadata operation did not close idle connections"
+
+	for _, playlist := range []bool{false, true} {
+		test.Run(fmt.Sprint(playlist), func(test *testing.T) {
+			transport := &ownedMetadataTransport{}
+			originalClient := http.DefaultClient
+
+			test.Cleanup(func() {
+				http.DefaultClient = originalClient
+			})
+
+			http.DefaultClient = &http.Client{Transport: transport}
+
+			var err error
+			if playlist {
+				_, err = GetPlaylistInfo(retryPlaylistID)
+			} else {
+				_, err = GetVideoInfo(retryVideoID)
+			}
+
+			if err != nil {
+				test.Fatal(err)
+			}
+
+			if !transport.closed {
+				test.Fatal(cleanupError)
+			}
+		})
 	}
 }

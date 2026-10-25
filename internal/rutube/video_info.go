@@ -15,6 +15,7 @@ import (
 
 const (
 	metadataRequestTimeout         = 2 * time.Minute
+	videoRequestErrorFormat        = "cannot read video metadata: %w"
 	metadataReadErrorFormat        = "cannot read body: %w"
 	metadataDecodeErrorFormat      = "cannot unmarshal body: %w"
 	videoMissingFieldsMessage      = "video metadata is missing title or playlist URL"
@@ -34,13 +35,13 @@ func (vi VideoInfo) String() string {
 }
 
 func GetVideoInfo(videoID string) (VideoInfo, error) {
-	provider := newMetadataProvider(nil)
-	return provider.Video(context.Background(), videoID)
-}
+	httpClient := client.NewStreamingClient()
+	defer httpClient.CloseIdleConnections()
 
-func getVideoInfo(operationContext context.Context, videoID string) (VideoInfo, error) {
-	reader := client.New(nil)
-	return getVideoInfoWithReader(operationContext, reader, videoID)
+	reader := client.New(httpClient)
+	provider := newMetadataProvider(reader)
+
+	return provider.Video(context.Background(), videoID)
 }
 
 func getVideoInfoWithReader(
@@ -54,7 +55,7 @@ func getVideoInfoWithReader(
 
 	response, err := reader.Read(operationContext, link)
 	if err != nil {
-		return VideoInfo{}, err
+		return VideoInfo{}, fmt.Errorf(videoRequestErrorFormat, err)
 	}
 
 	bodyReader := bytes.NewReader(response.Body)

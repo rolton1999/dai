@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -265,5 +267,59 @@ func TestReadClosesResponseReturnedWithTransportError(test *testing.T) {
 	response, err := client.Read(context.Background(), fixtureURL)
 	if !errors.Is(err, io.ErrUnexpectedEOF) || !body.closed {
 		test.Fatalf(fixtureBoundsErrorFormat, response, err, body.closed)
+	}
+}
+
+func TestStreamingClientReusesAndClosesConnections(test *testing.T) {
+	const (
+		expectedConnections    = 1
+		requestCount           = 2
+		connectionReuseError   = "connections=%d, expected one reused connection"
+		connectionCleanupError = "idle connection remained open"
+	)
+
+	var connections atomic.Int32
+
+	closed := make(chan struct{}, requestCount)
+	handler := http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(writer, fixtureBody)
+	})
+	server := httptest.NewUnstartedServer(handler)
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			connections.Add(1)
+		}
+
+		if state == http.StateClosed {
+			closed <- struct{}{}
+		}
+	}
+
+	server.Start()
+	defer server.Close()
+
+	httpClient := NewStreamingClient()
+	defer httpClient.CloseIdleConnections()
+
+	reader := New(httpClient)
+	for range requestCount {
+		if _, err := reader.Read(context.Background(), server.URL); err != nil {
+			test.Fatal(err)
+		}
+	}
+
+	if connections.Load() != expectedConnections {
+		test.Fatalf(connectionReuseError, connections.Load())
+	}
+
+	httpClient.CloseIdleConnections()
+
+	timer := time.NewTimer(fixtureCompletionDeadline)
+	defer timer.Stop()
+
+	select {
+	case <-closed:
+	case <-timer.C:
+		test.Fatal(connectionCleanupError)
 	}
 }

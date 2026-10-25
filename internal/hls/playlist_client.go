@@ -11,10 +11,6 @@ type variantProvider interface {
 }
 
 func newPlaylistClient(reader client.Client) variantProvider {
-	if reader == nil {
-		reader = client.New(nil)
-	}
-
 	return &playlistClient{reader: reader}
 }
 

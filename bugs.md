@@ -139,8 +139,24 @@ existing segment retry and cleanup regressions remain in the ordinary test suite
 
 Build, lint and race checks validate section 3. Fifty race-enabled repetitions of
 the cancellation checks passed, verifying that requests and fixture handlers finish
-before cleanup. Pipeline-wide shutdown,
-output safety and other later sections remain separate work. Live Rutube checks
+before cleanup.
+
+Review follow-up: playlist pages now require an explicit boolean `has_next`;
+missing or null state is rejected instead of silently treating a page as final.
+Regression fixtures cover these cases alongside valid empty and final pages.
+Default HTTP clients are explicitly owned by metadata, HLS playlist and segment
+operations, which close idle connections on return; injected readers remain
+caller-owned. Local connection-state fixtures verify reuse within an operation
+and closure, and metadata entry-point tests verify cleanup. Cancellation tests
+stop and join their workers on failure paths. The three test-only default-client
+request wrappers and their obsolete transport-installation helper were removed;
+status tests inject readers directly. Request errors identify video metadata,
+playlist titles, numbered playlist pages, master playlists or media playlists
+while preserving wrapped errors. Fifty race-enabled repetitions of connection
+cleanup and cancellation checks passed after these changes.
+
+Pipeline-wide shutdown, output safety and other later sections remain separate
+work. Live Rutube checks
 were not rerun for this HTTP/validation change.
 
 ## 4. Propagate pipeline errors and own temporary data

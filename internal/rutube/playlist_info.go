@@ -19,6 +19,9 @@ const (
 	playlistSizeError        = "playlist metadata exceeds total size limit"
 	playlistMissingBaseError = "playlist response URL is missing"
 
+	playlistMissingStateMessage   = "playlist pagination state is missing"
+	playlistTitleErrorFormat      = "cannot read playlist title: %w"
+	playlistPageErrorFormat       = "cannot read playlist page %d: %w"
 	playlistMissingTitleMessage   = "playlist title is missing"
 	playlistMissingResultsMessage = "playlist results are missing"
 	playlistMissingNextMessage    = "playlist continuation URL is missing"
@@ -36,13 +39,13 @@ func (pi PlaylistInfo) String() string {
 }
 
 func GetPlaylistInfo(playlistID string) (PlaylistInfo, error) {
-	provider := newMetadataProvider(nil)
-	return provider.Playlist(context.Background(), playlistID)
-}
+	httpClient := client.NewStreamingClient()
+	defer httpClient.CloseIdleConnections()
 
-func getPlaylistInfo(operationContext context.Context, playlistID string) (PlaylistInfo, error) {
-	reader := client.New(nil)
-	return getPlaylistInfoWithReader(operationContext, reader, playlistID)
+	reader := client.New(httpClient)
+	provider := newMetadataProvider(reader)
+
+	return provider.Playlist(context.Background(), playlistID)
 }
 
 func getPlaylistInfoWithReader(
@@ -59,14 +62,14 @@ func getPlaylistInfoWithReader(
 
 	response, err := reader.Read(operationContext, titleLink)
 	if err != nil {
-		return PlaylistInfo{}, err
+		return PlaylistInfo{}, fmt.Errorf(playlistTitleErrorFormat, err)
 	}
 
 	titleReader := bytes.NewReader(response.Body)
 
 	title, err := parseTitleFromPlaylistApiResponse(titleReader)
 	if err != nil {
-		return PlaylistInfo{}, err
+		return PlaylistInfo{}, fmt.Errorf(playlistTitleErrorFormat, err)
 	}
 
 	result := PlaylistInfo{Title: title}
@@ -83,7 +86,7 @@ func getPlaylistInfoWithReader(
 
 		response, err = reader.Read(operationContext, next)
 		if err != nil {
-			return PlaylistInfo{}, err
+			return PlaylistInfo{}, fmt.Errorf(playlistPageErrorFormat, len(seen), err)
 		}
 
 		responseBytes += len(response.Body)
@@ -95,7 +98,7 @@ func getPlaylistInfoWithReader(
 
 		ids, reference, err := parseVideoIDsFromPlaylistApiResponse(pageReader)
 		if err != nil {
-			return PlaylistInfo{}, err
+			return PlaylistInfo{}, fmt.Errorf(playlistPageErrorFormat, len(seen), err)
 		}
 
 		result.VideoIDs = append(result.VideoIDs, ids...)
@@ -154,7 +157,7 @@ func parseVideoIDsFromPlaylistApiResponse(bodyReader io.Reader) ([]string, strin
 
 	type expectedBody struct {
 		Results []result `json:"results"`
-		HasNext bool     `json:"has_next"`
+		HasNext *bool    `json:"has_next"`
 		Next    string   `json:"next"`
 	}
 
@@ -169,7 +172,11 @@ func parseVideoIDsFromPlaylistApiResponse(bodyReader io.Reader) ([]string, strin
 		return nil, "", errors.New(playlistMissingResultsMessage)
 	}
 
-	if metadata.HasNext && strings.TrimSpace(metadata.Next) == "" {
+	if metadata.HasNext == nil {
+		return nil, "", errors.New(playlistMissingStateMessage)
+	}
+
+	if *metadata.HasNext && strings.TrimSpace(metadata.Next) == "" {
 		return nil, "", errors.New(playlistMissingNextMessage)
 	}
 
@@ -183,7 +190,7 @@ func parseVideoIDsFromPlaylistApiResponse(bodyReader io.Reader) ([]string, strin
 	}
 
 	next := ""
-	if metadata.HasNext {
+	if *metadata.HasNext {
 		next = metadata.Next
 	}
 
