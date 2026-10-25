@@ -13,6 +13,9 @@ jobs:
     container: golang:1.27.1
     timeout-minutes: 10
     steps:
+      # Checkout falls back to an archive without .git when Git is unavailable.
+      - name: Install Git before checkout
+        run: apt-get update && apt-get install -y --no-install-recommends git
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
         with:
           persist-credentials: false
