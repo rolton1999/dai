@@ -396,6 +396,20 @@ attempts, and restarting playlist metadata without duplicating earlier pages.
 and checksum results directly to the terminal. `make e2e` runs both. The real single-video checksum
 test passed. The colon-prefixed playlist filename conversion bug is fixed below.
 
+## Dead-code audit
+
+Whole-program reachability analysis (`deadcode` from `golang.org/x/tools`
+v0.36.0) found no unreachable functions. Source inspection identified redundant
+bookkeeping in pipeline fan-out: a wait group served only a goroutine that waited
+and exited without publishing a result. Both were removed. Workers still close
+their output channels, and pipeline completion still waits for the downstream
+finalizers to finish consuming those channels.
+
+Verification: `make build`, `make lint`, `make test`, and 100 race-enabled
+repetitions of the pipeline tests passed. This cleanup does not resolve the
+pipeline error propagation and cancellation gaps above. Live Rutube and FFmpeg
+smoke tests were not run for this change.
+
 ## Fixed failure: output title interpreted as a protocol
 
 The first E2E playlist title begins with `6:57`. Passing that relative filename

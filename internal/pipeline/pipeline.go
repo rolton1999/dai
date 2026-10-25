@@ -91,20 +91,15 @@ func fanOut(inputChannel <-chan any, finalizerCount int) []chan any {
 		outputChannels[stageIndex] = make(chan any)
 	}
 
-	workersDone := sync.WaitGroup{}
 	for stageIndex := range finalizerCount {
-		workersDone.Go(func() {
+		go func() {
 			defer close(outputChannels[stageIndex])
 
 			for value := range inputChannel {
 				outputChannels[stageIndex] <- value
 			}
-		})
+		}()
 	}
-
-	go func() {
-		workersDone.Wait()
-	}()
 
 	return outputChannels
 }
