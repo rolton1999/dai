@@ -25,6 +25,10 @@ func Do(operationContext context.Context, operation func(context.Context) error)
 			return operationContext.Err()
 		}
 
+		if !IsRetryable(err) {
+			return err
+		}
+
 		if attemptIndex == retries-1 {
 			return err
 		}

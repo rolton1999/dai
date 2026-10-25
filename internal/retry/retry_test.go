@@ -3,63 +3,113 @@ package retry
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
+	"testing/synctest"
+	"time"
 )
 
-var errRetryFixture = errors.New("retry fixture failure")
+const (
+	retryFixtureErrorFormat       = "attempts=%d elapsed=%s error=%v"
+	retryCanceledErrorFormat      = "expected cancellation, got %v"
+	retryCanceledOperationMessage = "operation started after cancellation"
+)
+
+var errRetryFixture = io.ErrUnexpectedEOF
 
 func TestRetryRecovers(test *testing.T) {
-	attempts := 0
+	const (
+		expectedDelay    = time.Second
+		expectedAttempts = 2
+	)
 
-	err := Do(context.Background(), func(context.Context) error {
-		attempts++
-		if attempts == 1 {
-			return errRetryFixture
+	synctest.Test(test, func(test *testing.T) {
+		attempts := 0
+		started := time.Now()
+
+		err := Do(context.Background(), func(context.Context) error {
+			attempts++
+			if attempts == 1 {
+				return errRetryFixture
+			}
+
+			return nil
+		})
+		if err != nil || attempts != expectedAttempts || time.Since(started) != expectedDelay {
+			test.Fatalf(retryFixtureErrorFormat, attempts, time.Since(started), err)
 		}
-
-		return nil
 	})
-	if err != nil || attempts != 2 {
-		test.Fatalf("attempts=%d error=%v", attempts, err)
-	}
 }
 
 func TestRetryExhaustsAttempts(test *testing.T) {
-	const expectedAttempts = 3
+	synctest.Test(test, func(test *testing.T) {
+		const (
+			expectedAttempts = 3
+			expectedDelay    = 3 * time.Second
+		)
 
-	attempts := 0
+		attempts := 0
+		started := time.Now()
 
-	err := Do(context.Background(), func(context.Context) error {
-		attempts++
-		return errRetryFixture
+		err := Do(context.Background(), func(context.Context) error {
+			attempts++
+			return errRetryFixture
+		})
+		if !errors.Is(err, errRetryFixture) || attempts != expectedAttempts || time.Since(started) != expectedDelay {
+			test.Fatalf(retryFixtureErrorFormat, attempts, time.Since(started), err)
+		}
 	})
-	if !errors.Is(err, errRetryFixture) || attempts != expectedAttempts {
-		test.Fatalf("attempts=%d error=%v", attempts, err)
-	}
 }
 
 func TestRetryStopsOnCancellation(test *testing.T) {
-	operationContext, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	synctest.Test(test, func(test *testing.T) {
+		started := time.Now()
 
-	attempts := 0
+		operationContext, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
-	err := Do(operationContext, func(context.Context) error {
-		attempts++
+		attempts := 0
 
-		cancel()
+		err := Do(operationContext, func(context.Context) error {
+			attempts++
 
-		return errRetryFixture
+			cancel()
+
+			return errRetryFixture
+		})
+		if !errors.Is(err, context.Canceled) || attempts != 1 {
+			test.Fatalf(retryFixtureErrorFormat, attempts, time.Since(started), err)
+		}
+
+		err = Do(operationContext, func(context.Context) error {
+			test.Fatal(retryCanceledOperationMessage)
+			return nil
+		})
+		if !errors.Is(err, context.Canceled) {
+			test.Fatalf(retryCanceledErrorFormat, err)
+		}
 	})
-	if !errors.Is(err, context.Canceled) || attempts != 1 {
-		test.Fatalf("attempts=%d error=%v", attempts, err)
-	}
+}
 
-	err = Do(operationContext, func(context.Context) error {
-		test.Fatal("operation started after cancellation")
-		return nil
+func TestRetryDeadlineInterruptsBackoff(test *testing.T) {
+	const (
+		deadline              = 500 * time.Millisecond
+		unexpectedRetryFormat = "attempts=%d elapsed=%s error=%v"
+	)
+
+	synctest.Test(test, func(test *testing.T) {
+		operationContext, cancel := context.WithTimeout(context.Background(), deadline)
+		defer cancel()
+
+		attempts := 0
+		started := time.Now()
+
+		err := Do(operationContext, func(context.Context) error {
+			attempts++
+			return errRetryFixture
+		})
+		if attempts != 1 || time.Since(started) != deadline || !errors.Is(err, context.DeadlineExceeded) {
+			test.Fatalf(unexpectedRetryFormat, attempts, time.Since(started), err)
+		}
 	})
-	if !errors.Is(err, context.Canceled) {
-		test.Fatalf("expected cancellation, got %v", err)
-	}
 }

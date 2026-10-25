@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 
 	"dai/internal/hls"
 )
@@ -96,67 +97,71 @@ func TestDownloadTSFilesRequestsOnlySegments(test *testing.T) {
 }
 
 func TestDownloadTSFilesRejectsRealSegmentFailure(test *testing.T) {
-	setFixtureClient(test, fixtureMediaPlaylist, http.StatusBadGateway)
+	synctest.Test(test, func(test *testing.T) {
+		setFixtureClient(test, fixtureMediaPlaylist, http.StatusBadGateway)
 
-	files, err := hls.DownloadTSFiles(silentLogger{}, fixtureOutputName, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
-	if err == nil || files != nil {
-		test.Fatalf("expected a failed segment to abort download, got files %v and error %v", files, err)
-	}
+		files, err := hls.DownloadTSFiles(silentLogger{}, fixtureOutputName, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
+		if err == nil || files != nil {
+			test.Fatalf("expected a failed segment to abort download, got files %v and error %v", files, err)
+		}
 
-	artifacts, err := os.ReadDir(os.Getenv(fixtureTemporaryDirectoryKey))
-	if err != nil || len(artifacts) != 0 {
-		test.Fatalf("failed download left temporary artifacts: %v, error %v", artifacts, err)
-	}
+		artifacts, err := os.ReadDir(os.Getenv(fixtureTemporaryDirectoryKey))
+		if err != nil || len(artifacts) != 0 {
+			test.Fatalf("failed download left temporary artifacts: %v, error %v", artifacts, err)
+		}
+	})
 }
 
 func TestDownloadTSFilesRecoversInterruptedSegment(test *testing.T) {
-	const partialBody = "partial body longer than the complete first segment"
+	synctest.Test(test, func(test *testing.T) {
+		const partialBody = "partial body longer than the complete first segment"
 
-	setFixtureClient(test, fixtureMediaPlaylist, http.StatusOK)
+		setFixtureClient(test, fixtureMediaPlaylist, http.StatusOK)
 
-	transport := http.DefaultClient.Transport
-	attempts := atomic.Int32{}
-	http.DefaultClient.Transport = fixtureTransport(func(request *http.Request) (*http.Response, error) {
-		if request.URL.Path == fixtureFirstSegmentPath && attempts.Add(1) == 1 {
-			partialReader := strings.NewReader(partialBody)
-			body := io.MultiReader(partialReader, interruptedSegmentReader{})
+		transport := http.DefaultClient.Transport
+		attempts := atomic.Int32{}
+		http.DefaultClient.Transport = fixtureTransport(func(request *http.Request) (*http.Response, error) {
+			if request.URL.Path == fixtureFirstSegmentPath && attempts.Add(1) == 1 {
+				partialReader := strings.NewReader(partialBody)
+				body := io.MultiReader(partialReader, interruptedSegmentReader{})
 
-			responseBody := io.NopCloser(body)
-			response := &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       responseBody,
-				Request:    request,
+				responseBody := io.NopCloser(body)
+				response := &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       responseBody,
+					Request:    request,
+				}
+
+				return response, nil
 			}
 
-			return response, nil
+			return transport.RoundTrip(request)
+		})
+
+		files, err := hls.DownloadTSFiles(silentLogger{}, fixtureOutputName, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
+		if err != nil {
+			test.Fatal(err)
 		}
 
-		return transport.RoundTrip(request)
+		expectedBodies := []string{
+			fixtureFirstSegmentBody,
+			fixtureSecondSegmentBody,
+		}
+		if len(files) != len(expectedBodies) {
+			test.Fatalf("expected %d complete segments, got %d", len(expectedBodies), len(files))
+		}
+
+		for segmentIndex, fileName := range files {
+			body, err := os.ReadFile(fileName)
+			if err != nil || string(body) != expectedBodies[segmentIndex] {
+				test.Fatalf("segment %d retained partial data: %q, error %v", segmentIndex, body, err)
+			}
+		}
+
+		if attempts.Load() != 2 {
+			test.Fatalf("expected two attempts for interrupted segment, got %d", attempts.Load())
+		}
 	})
-
-	files, err := hls.DownloadTSFiles(silentLogger{}, fixtureOutputName, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
-	if err != nil {
-		test.Fatal(err)
-	}
-
-	expectedBodies := []string{
-		fixtureFirstSegmentBody,
-		fixtureSecondSegmentBody,
-	}
-	if len(files) != len(expectedBodies) {
-		test.Fatalf("expected %d complete segments, got %d", len(expectedBodies), len(files))
-	}
-
-	for segmentIndex, fileName := range files {
-		body, err := os.ReadFile(fileName)
-		if err != nil || string(body) != expectedBodies[segmentIndex] {
-			test.Fatalf("segment %d retained partial data: %q, error %v", segmentIndex, body, err)
-		}
-	}
-
-	if attempts.Load() != 2 {
-		test.Fatalf("expected two attempts for interrupted segment, got %d", attempts.Load())
-	}
 }
 
 func TestDownloadTSFilesRejectsMalformedPlaylist(test *testing.T) {
