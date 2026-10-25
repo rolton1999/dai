@@ -6,6 +6,7 @@ resolution HLS variant and saves it as MP4 using FFmpeg, without re-encoding.
 ## Usage
 
 Requires Go 1.25 or later to build, and `ffmpeg` and `ffprobe` on `PATH` to run.
+Supported platforms are macOS, Linux, DragonFly BSD, FreeBSD, NetBSD, and OpenBSD.
 
 ```sh
 make build
@@ -103,5 +104,4 @@ Live checksum tests are opt-in: `make e2e-single`, `make e2e-playlist` (one job)
 `make test-all` runs all suites, stopping on failure. See
 [live test requirements and reference checksums](tests/e2e/README.md).
 Local fixtures do not establish live Rutube compatibility; live checksum tests
-have not been rerun against the current implementation. Windows resume behavior
-has been cross-compiled but not tested at runtime.
+have not been rerun against the current implementation.
