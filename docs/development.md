@@ -4,8 +4,10 @@
 
 The test suite covers parsing, retries, cancellation, worker limits, immediate
 slot reuse, shutdown, output collisions, concurrent publication, progress rows,
-and playlist recovery. Both HLS parsers have fuzz targets. Dependencies are
-injected so failure paths can run against local HTTP fixtures and process doubles.
+playlist recovery, quoted remote titles in errors, and exclusive-rename fallback
+publication. Local FFmpeg fixtures also test a truncated, packet-aligned segment
+served with a successful HTTP response. Both HLS parsers have fuzz targets.
+Dependencies are injected so failure paths can run against local HTTP fixtures and process doubles.
 
 ```sh
 make build

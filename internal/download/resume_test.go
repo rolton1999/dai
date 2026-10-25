@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"dai/internal/ffmpeg"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -476,7 +477,7 @@ func TestResumeCheckpointFailureDoesNotPublishOutput(test *testing.T) {
 	converter := conversionAdapter(func(
 		_ context.Context,
 		_ progress.Logger,
-		_ []string,
+		_ ffmpeg.Input,
 		output string,
 	) error {
 		if err := os.Remove(manifestPath); err != nil {

@@ -10,6 +10,7 @@ import (
 	"dai/internal/http/client"
 	"dai/internal/progress"
 	"dai/internal/rutube"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -28,9 +29,9 @@ const (
 	localTitle        = "local video"
 	localID           = "0123456789abcdef0123456789abcdef"
 	localSegmentName  = "segment.ts"
-	localGeneration   = "-hide_banner -loglevel error -f lavfi -i color=c=black:s=16x16:r=1 -t 1 -c:v mpeg2video -f mpegts"
+	localGeneration   = "-hide_banner -loglevel error -f lavfi -i color=c=black:s=16x16:r=1 -t 8 -c:v mpeg2video -f mpegts"
 	localMaster       = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000,RESOLUTION=16x16\nmedia.m3u8\n"
-	localMedia        = "#EXTM3U\n#EXTINF:1,\nsegment.ts\n#EXT-X-ENDLIST\n"
+	localMedia        = "#EXTM3U\n#EXTINF:8,\nsegment.ts\n#EXT-X-ENDLIST\n"
 )
 
 const (
@@ -79,6 +80,24 @@ func (doer *localDoer) Close() {
 }
 
 func TestLocalHTTPDownloadAndConversion(test *testing.T) {
+	test.Run("complete", func(test *testing.T) {
+		testLocalHTTPDownloadAndConversion(test, false)
+	})
+	test.Run("truncated segment", func(test *testing.T) {
+		testLocalHTTPDownloadAndConversion(test, true)
+	})
+}
+
+func testLocalHTTPDownloadAndConversion(test *testing.T, truncated bool) {
+	test.Helper()
+
+	const (
+		transportPacketBytes       = 188
+		truncationDivisor          = 2
+		incompleteError            = "incomplete MP4"
+		unexpectedTruncationResult = "truncated segment result: %v"
+	)
+
 	operationContext, cancel := context.WithTimeout(context.Background(), localTimeout)
 	defer cancel()
 
@@ -94,6 +113,10 @@ func TestLocalHTTPDownloadAndConversion(test *testing.T) {
 	segmentBody, err := os.ReadFile(segment)
 	if err != nil {
 		test.Fatal(err)
+	}
+
+	if truncated {
+		segmentBody = segmentBody[:len(segmentBody)/(transportPacketBytes*truncationDivisor)*transportPacketBytes]
 	}
 
 	handler := http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
@@ -151,15 +174,26 @@ func TestLocalHTTPDownloadAndConversion(test *testing.T) {
 		test.Fatal(err)
 	}
 
-	if err := service.Video(operationContext, localID, download.Options{OutputDirectory: outputDirectory}); err != nil {
+	err = service.Video(operationContext, localID, download.Options{OutputDirectory: outputDirectory})
+	if truncated {
+		if err == nil || !strings.Contains(err.Error(), incompleteError) {
+			test.Fatalf(unexpectedTruncationResult, err)
+		}
+	} else if err != nil {
 		test.Fatal(err)
 	}
 
 	target := filepath.Join(outputDirectory, localTitle+localIntegrationTestMp4)
 
-	probe := exec.CommandContext(operationContext, localIntegrationTestFfprobe, localIntegrationTestV, localIntegrationTestError, localIntegrationTestShowEntries, localIntegrationTestFormatDuration, target)
-	if output, err := probe.CombinedOutput(); err != nil {
-		test.Fatalf(localIntegrationTestProbe, err, output)
+	if truncated {
+		if _, err := os.Lstat(target); !errors.Is(err, os.ErrNotExist) {
+			test.Fatalf(unexpectedTruncationResult, err)
+		}
+	} else {
+		probe := exec.CommandContext(operationContext, localIntegrationTestFfprobe, localIntegrationTestV, localIntegrationTestError, localIntegrationTestShowEntries, localIntegrationTestFormatDuration, target)
+		if output, err := probe.CombinedOutput(); err != nil {
+			test.Fatalf(localIntegrationTestProbe, err, output)
+		}
 	}
 
 	entries, err := os.ReadDir(temporaryRoot)
@@ -167,8 +201,13 @@ func TestLocalHTTPDownloadAndConversion(test *testing.T) {
 		test.Fatalf(localIntegrationTestTemporarySegmentsRemain, entries, err)
 	}
 
+	expectedOutputs := 1
+	if truncated {
+		expectedOutputs = 0
+	}
+
 	entries, err = os.ReadDir(outputDirectory)
-	if err != nil || len(entries) != 1 {
+	if err != nil || len(entries) != expectedOutputs {
 		test.Fatalf(localIntegrationTestUnexpectedOutputArtifacts, entries, err)
 	}
 }

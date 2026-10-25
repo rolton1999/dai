@@ -55,7 +55,7 @@ const DefaultJobs = 4
 
 const (
 	invalidJobsMessage       = "jobs must be greater than zero"
-	playlistVideoErrorFormat = "playlist item %d (%s): %w"
+	playlistVideoErrorFormat = "playlist item %d (%q): %w"
 )
 
 type Options struct {
@@ -100,7 +100,7 @@ func (service *serviceImpl) Video(operationContext context.Context, videoID stri
 		return err
 	}
 
-	directory, err := outputDirectory(options.OutputDirectory)
+	directory, err := outputDirectory(options.OutputDirectory, options.Overwrite)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func (service *serviceImpl) Playlist(operationContext context.Context, playlistI
 		return err
 	}
 
-	directory, err := outputDirectory(options.OutputDirectory)
+	directory, err := outputDirectory(options.OutputDirectory, options.Overwrite)
 	if err != nil {
 		return err
 	}
@@ -321,7 +321,9 @@ func (service *serviceImpl) download(
 	}()
 
 	staging := filepath.Join(workspace, stagingFilename)
-	if err := service.converter.Convert(operationContext, logger, artifact.Files(), staging); err != nil {
+
+	input := ffmpeg.Input{Files: artifact.Files(), ExpectedDuration: artifact.Duration()}
+	if err := service.converter.Convert(operationContext, logger, input, staging); err != nil {
 		return err
 	}
 
@@ -347,7 +349,7 @@ func (service *serviceImpl) download(
 	if overwrite {
 		err = os.Rename(staging, job.target)
 	} else {
-		err = os.Link(staging, job.target)
+		err = publishNewFile(staging, job.target)
 	}
 
 	if err != nil {
@@ -364,7 +366,7 @@ type downloadJob struct {
 	complete bool
 }
 
-func outputDirectory(directory string) (string, error) {
+func outputDirectory(directory string, overwrite bool) (string, error) {
 	if directory == "" {
 		directory = defaultOutputDirectory
 	}
@@ -378,7 +380,18 @@ func outputDirectory(directory string) (string, error) {
 		return "", err
 	}
 
-	return filepath.EvalSymlinks(absolute)
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return "", err
+	}
+
+	if !overwrite {
+		if err := checkPublicationSupport(resolved); err != nil {
+			return "", err
+		}
+	}
+
+	return resolved, nil
 }
 
 func checkDestination(path string, overwrite bool) error {

@@ -50,11 +50,26 @@ unless `--overwrite` is set. See [download behavior](docs/downloads.md) for deta
 ```sh
 make build
 make lint
-make test              # Race-enabled; no live Rutube or FFmpeg required
-make test-integration  # Local HTTP fixtures and real FFmpeg/FFprobe
+make test                   # Race-enabled; no live Rutube or FFmpeg required
+make test-integration       # Local HTTP fixtures and real FFmpeg/FFprobe
+make e2e-single             # Live Rutube video and reference checksum
+make e2e-playlist           # Live playlist, one video worker
+make e2e-playlist-parallel  # Live playlist, four video workers
+make e2e-playlist-resume    # Live playlist recovery across two runs
 ```
+
+`make e2e` runs all four live tests. They require network access, FFmpeg, FFprobe,
+and `shasum`, and use isolated temporary directories. Outputs must match the
+committed reference checksums; a different FFmpeg build or upstream re-encoding
+can change them. See [E2E requirements and checksums](tests/e2e/README.md).
 
 CI runs lint and race-enabled unit tests. Live Rutube checksum tests are opt-in
 and have not been rerun against the current implementation.
+
+Local regression tests reject an HTTP-successful but truncated segment whose MP4
+is shorter than the advertised HLS duration. Safe publication uses hard links,
+with an exclusive-rename fallback on macOS and Linux. That fallback is tested
+with simulated unsupported links; actual exFAT and network filesystems have not
+been verified.
 
 [Testing and development](docs/development.md) · [Concurrency design](docs/concurrency.md)

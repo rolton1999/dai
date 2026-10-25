@@ -22,6 +22,7 @@ const (
 // The caller owns a successful artifact and must close it after conversion.
 type Artifact interface {
 	Files() []string
+	Duration() float64
 	Close() error
 }
 
@@ -75,12 +76,18 @@ func downloadTSFiles(
 		return nil, err
 	}
 
+	var duration float64
+	for _, segment := range segmentMetas {
+		duration += segment.duration
+	}
+
 	downloadSucceeded = true
 
-	return &artifact{directory: directoryName, files: listOfFiles}, nil
+	return &artifact{directory: directoryName, files: listOfFiles, duration: duration}, nil
 }
 
 type artifact struct {
+	duration  float64
 	directory string
 	files     []string
 }
@@ -89,11 +96,16 @@ func (download *artifact) Files() []string {
 	return append([]string(nil), download.files...)
 }
 
+func (download *artifact) Duration() float64 {
+	return download.duration
+}
+
 func (download *artifact) Close() error {
 	return os.RemoveAll(download.directory)
 }
 
 type segmentMeta struct {
+	duration float64
 	index    int
 	link     string
 	fileName string

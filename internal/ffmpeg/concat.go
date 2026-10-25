@@ -40,11 +40,15 @@ const (
 )
 
 const (
-	conversionFilePermissions = 0o666
-	expectedFormat            = "mp4"
-	formatSeparator           = ","
-	probeNumberBitSize        = 64
-	videoCodecType            = "video"
+	durationToleranceSeconds       = 0.25
+	durationToleranceRatio         = 0.05
+	invalidExpectedDurationMessage = "expected video duration must be finite and positive"
+	incompleteOutputFormat         = "incomplete MP4: expected at least %.3f seconds, got %.3f seconds"
+	conversionFilePermissions      = 0o666
+	expectedFormat                 = "mp4"
+	formatSeparator                = ","
+	probeNumberBitSize             = 64
+	videoCodecType                 = "video"
 )
 
 const (
@@ -72,13 +76,19 @@ type processRunner interface {
 	Run(context.Context, string, []string) ([]byte, error)
 }
 
+type Input struct {
+	Files []string
+	// ExpectedDuration is the sum of advertised HLS segment durations in seconds.
+	ExpectedDuration float64
+}
+
 // Convert writes a validated MP4 to a new staging path in a caller-owned
 // directory. The caller publishes the file only after Convert succeeds.
 type Converter interface {
 	Convert(
 		context.Context,
 		progress.Logger,
-		[]string,
+		Input,
 		string,
 	) error
 }
@@ -98,7 +108,7 @@ type converterImpl struct {
 func (converter *converterImpl) Convert(
 	operationContext context.Context,
 	logger progress.Logger,
-	segments []string,
+	input Input,
 	resultName string,
 ) (resultError error) {
 	if err := operationContext.Err(); err != nil {
@@ -108,7 +118,11 @@ func (converter *converterImpl) Convert(
 	operationContext, cancel := context.WithTimeout(operationContext, conversionTimeout)
 	defer cancel()
 
-	resultPath, err := validateConversionInputs(segments, resultName)
+	if input.ExpectedDuration <= 0 || math.IsNaN(input.ExpectedDuration) || math.IsInf(input.ExpectedDuration, 0) {
+		return errors.New(invalidExpectedDurationMessage)
+	}
+
+	resultPath, err := validateConversionInputs(input.Files, resultName)
 	if err != nil {
 		return err
 	}
@@ -129,7 +143,7 @@ func (converter *converterImpl) Convert(
 		return err
 	}
 
-	manifestPath, err := createConcatManifest(segments)
+	manifestPath, err := createConcatManifest(input.Files)
 	if err != nil {
 		return err
 	}
@@ -143,7 +157,7 @@ func (converter *converterImpl) Convert(
 		return err
 	}
 
-	if err := converter.validateOutput(operationContext, resultPath); err != nil {
+	if err := converter.validateOutput(operationContext, resultPath, input.ExpectedDuration); err != nil {
 		return err
 	}
 
@@ -156,7 +170,7 @@ func (converter *converterImpl) Convert(
 	return nil
 }
 
-func (converter *converterImpl) validateOutput(operationContext context.Context, stagedPath string) error {
+func (converter *converterImpl) validateOutput(operationContext context.Context, stagedPath string, expectedDuration float64) error {
 	info, err := os.Stat(stagedPath)
 	if err != nil {
 		return fmt.Errorf(ffmpegDidNotProduceOutputFormat, err)
@@ -196,6 +210,11 @@ func (converter *converterImpl) validateOutput(operationContext context.Context,
 
 	if err != nil || duration <= 0 || math.IsNaN(duration) || math.IsInf(duration, 0) || !hasVideo || !containsMP4Format(probe.Format.FormatName) {
 		return errors.New(invalidMP4OutputMessage)
+	}
+
+	tolerance := min(durationToleranceSeconds, expectedDuration*durationToleranceRatio)
+	if duration+tolerance < expectedDuration {
+		return fmt.Errorf(incompleteOutputFormat, expectedDuration-tolerance, duration)
 	}
 
 	return nil

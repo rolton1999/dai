@@ -7,6 +7,7 @@ import (
 )
 
 const (
+	mediaFixtureDurationSeconds     = 1
 	mediaFixtureURL                 = "https://cdn.example.test/path/media.m3u8"
 	mediaFixtureBody                = "#EXTM3U\n#EXTINF:1,\nsegment.ts\n#EXT-X-ENDLIST\n"
 	mediaFixturePrefix              = "fixture"
@@ -34,7 +35,7 @@ func TestMediaPlaylistAcceptsCompleteUnencryptedInput(test *testing.T) {
 	}
 	for _, body := range fixtures {
 		segments, err := parseSegmentMetas(body, baseURL, mediaFixturePrefix)
-		if err != nil || len(segments) != 1 || segments[0].link != mediaFixtureResolvedSegment {
+		if err != nil || len(segments) != 1 || segments[0].link != mediaFixtureResolvedSegment || segments[0].duration != mediaFixtureDurationSeconds {
 			test.Fatalf(mediaFixtureErrorFormat, segments, err)
 		}
 	}
