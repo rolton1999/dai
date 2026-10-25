@@ -66,10 +66,4 @@ can change them. See [E2E requirements and checksums](tests/e2e/README.md).
 CI runs lint and race-enabled unit tests. Live Rutube checksum tests are opt-in
 and have not been rerun against the current implementation.
 
-Local regression tests reject an HTTP-successful but truncated segment whose MP4
-is shorter than the advertised HLS duration. Safe publication uses hard links,
-with an exclusive-rename fallback on macOS and Linux. That fallback is tested
-with simulated unsupported links; actual exFAT and network filesystems have not
-been verified.
-
 [Testing and development](docs/development.md) · [Concurrency design](docs/concurrency.md)
