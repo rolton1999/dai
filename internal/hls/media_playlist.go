@@ -58,6 +58,16 @@ func collectSegmentMetas(
 
 	reader := client.New(httpClient)
 
+	return collectSegmentMetasWithReader(operationContext, reader, playlist, directoryName, resultName)
+}
+
+func collectSegmentMetasWithReader(
+	operationContext context.Context,
+	reader client.Client,
+	playlist VariantPlaylist,
+	directoryName string,
+	resultName string,
+) ([]segmentMeta, error) {
 	operationContext, cancel := context.WithTimeout(operationContext, playlistRequestTimeout)
 	defer cancel()
 

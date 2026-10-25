@@ -18,7 +18,7 @@ const (
 	fixtureTimeout           = 30 * time.Second
 	fixtureFFmpeg            = "ffmpeg"
 	fixtureFFprobe           = "ffprobe"
-	fixtureSegmentName       = "segment.ts"
+	fixtureSegmentName       = "segment's.ts"
 	fixturePlainOutput       = "video.mp4"
 	fixtureColonOutput       = "6:57 video.mp4"
 	fixtureHyphenOutput      = "-video.mp4"
@@ -69,7 +69,10 @@ func TestConcatAcceptsColonAndOptionLikeOutputNames(test *testing.T) {
 				test.Fatalf(fixtureGenerateError, err, output)
 			}
 
-			if err := ffmpeg.ConcatTSToResult(&fixtureLogger{}, []string{segment}, name); err != nil {
+			converter := ffmpeg.New(nil)
+
+			logger := &fixtureLogger{}
+			if err := converter.Convert(operationContext, logger, []string{segment}, name); err != nil {
 				test.Fatal(err)
 			}
 
@@ -98,7 +101,12 @@ func TestConcatIncludesDiagnosticsAndDoesNotReportSuccessOnFailure(test *testing
 
 	logger := &fixtureLogger{}
 
-	err := ffmpeg.ConcatTSToResult(logger, []string{segment}, fixturePlainOutput)
+	operationContext, cancel := context.WithTimeout(context.Background(), fixtureTimeout)
+	defer cancel()
+
+	converter := ffmpeg.New(nil)
+
+	err := converter.Convert(operationContext, logger, []string{segment}, fixturePlainOutput)
 	if err == nil || !strings.Contains(err.Error(), fixtureSegmentName) {
 		test.Fatalf(fixtureDiagnosticsError, err)
 	}

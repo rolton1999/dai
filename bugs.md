@@ -286,17 +286,17 @@ publication safety remain in section 5.
 
 ## 5. Make output naming and FFmpeg conversion safe
 
-- [ ] Sanitize titles into filenames and keep output inside the selected directory.
-- [ ] Fail before downloading if the destination exists, unless overwrite is
+- [x] Sanitize titles into filenames and keep output inside the selected directory.
+- [x] Fail before downloading if the destination exists, unless overwrite is
   explicitly requested; apply the same policy to duplicate playlist titles.
-- [ ] Use a unique concat manifest inside the operation's temporary directory.
-- [ ] Escape segment paths correctly for FFmpeg concat syntax.
-- [ ] Stop the spinner on every return path and report success only after the
+- [x] Use a unique concat manifest inside the operation's temporary directory.
+- [x] Escape segment paths correctly for FFmpeg concat syntax.
+- [x] Stop the spinner on every return path and report success only after the
   output is validated.
-- [ ] Capture FFmpeg diagnostics in conversion errors.
-- [ ] Write to a temporary MP4, validate the result, and publish it without
+- [x] Capture FFmpeg diagnostics in conversion errors.
+- [x] Write to a temporary MP4, validate the result, and publish it without
   overwriting an existing destination unless explicitly authorized.
-- [ ] Detect unsuccessful conversion even when FFmpeg returns exit code zero
+- [x] Detect unsuccessful conversion even when FFmpeg returns exit code zero
   without creating the expected output.
 
 Tests:
@@ -310,6 +310,45 @@ Tests:
 - Add a small integration test that uses real FFmpeg to generate local segments,
   concatenate them, and inspect the resulting MP4 with FFprobe.
 - Keep ordinary unit tests independent of an installed FFmpeg executable.
+
+Section 5 extracted from `codex/fix-all-known-bugs` (`a024eae`) onto
+`codex/fix-output-and-ffmpeg-safety`, based on `master` at `a8ca43d` after
+section 4 merged in PR #9. The current HTTP client package, retry budgets and
+classification, deterministic backoff tests, and owned HLS artifacts are preserved.
+
+The CLI supports `--output` and explicit `--overwrite` before the URL. The download
+service sanitizes titles, preflights all playlist destinations, rejects duplicate
+filenames even with overwrite, and stages output inside the selected directory.
+Successful conversion is published with a no-replace hard link, or atomic rename
+when overwrite was requested. Competing publications cannot replace the winner.
+READY is printed only after publication and successful owned-resource cleanup.
+Naming rules and flags are documented in `README.md`.
+
+FFmpeg receives a unique, escaped concat manifest inside the segment directory and
+writes into a private conversion directory. FFprobe must identify an MP4 with a
+video stream and positive finite duration. Missing or empty output, invalid probe
+results, process failures and cancellation fail the operation. Process diagnostics
+are capped at 64 KiB; conversion, probe and process-pipe waits have deadlines.
+The spinner stops and joins on failure, success and cancellation, and repeated
+stop calls are safe. Ctrl-C/SIGTERM cancellation flows from the entry point through
+metadata, HLS, conversion and publication. Context is passed explicitly throughout.
+Injected network clients remain caller-owned and are closed after their work ends.
+
+Deterministic tests cover filename traversal/separators/controls/Unicode/quotes,
+length limits, existing destinations, duplicate playlist titles, overwrite success
+and failure, zero exit without usable output, malformed/failed/unusable probing,
+missing executables, cancellation, concurrent unique manifests and competing
+publication. Section 4's HTTP-backed failure and artifact-ownership tests remain.
+Real integration tests generate local inputs, exercise apostrophes in segment
+paths and colon/leading-hyphen output names, and verify a redirected local HTTP
+metadata-to-download-to-FFmpeg/FFprobe flow. Ordinary tests do not need FFmpeg.
+
+Verification: build, pinned lint (including integration-tagged files), the full
+race-enabled suite, local FFmpeg/HTTP integration tests, and 100 race-enabled
+repetitions of download/conversion/progress tests pass. A second lint run produces
+no source changes. Live Rutube checksum tests were not run for this extraction;
+source-branch live results do not establish compatibility of the assembled branch.
+Section 6 and the original branch's larger retry budget remain separate work.
 
 ## 6. Make developer checks safe and repeatable
 

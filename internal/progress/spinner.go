@@ -1,44 +1,52 @@
 package progress
 
 import (
+	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
-func SpinningMessage(logger Logger, message string, after string) func() {
+const (
+	spinnerFrames   = "/-\\|"
+	spinnerInterval = 200 * time.Millisecond
+	spinnerFormat   = "%s %c"
+)
+
+func SpinningMessageContext(
+	operationContext context.Context,
+	logger Logger,
+	message string,
+	after string,
+) func() {
 	stop := make(chan struct{})
 	done := make(chan struct{})
 
+	var once sync.Once
+
 	go func() {
-		frames := []string{
-			"/",
-			"-",
-			"\\",
-			"|",
-		}
+		defer close(done)
+		defer logger.UpdateWithSuffix(after)
 
-		defer func() {
-			logger.UpdateWithSuffix(after)
-			close(done)
-		}()
+		ticker := time.NewTicker(spinnerInterval)
+		defer ticker.Stop()
 
-		const tickTime = 200 * time.Millisecond
-
-		ticker := time.NewTicker(tickTime)
-
-		for frameI := 0; ; frameI = (frameI + 1) % len(frames) {
+		for frameIndex := 0; ; frameIndex = (frameIndex + 1) % len(spinnerFrames) {
 			select {
+			case <-operationContext.Done():
+				return
 			case <-stop:
 				return
 			case <-ticker.C:
+				logger.UpdateWithSuffix(fmt.Sprintf(spinnerFormat, message, spinnerFrames[frameIndex]))
 			}
-
-			logger.UpdateWithSuffix(fmt.Sprintf("%s %s", message, frames[frameI]))
 		}
 	}()
 
 	return func() {
-		close(stop)
+		once.Do(func() {
+			close(stop)
+		})
 		<-done
 	}
 }
