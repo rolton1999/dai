@@ -1,6 +1,7 @@
 package hls
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/url"
@@ -191,7 +192,7 @@ func TestMasterPlaylistResolvesAfterRedirect(test *testing.T) {
 
 	http.DefaultClient = &http.Client{Transport: transport}
 
-	variants, err := GetVariantPlaylists("https://cdn.example.test" + redirectPath)
+	variants, err := GetVariantPlaylists(context.Background(), "https://cdn.example.test"+redirectPath)
 	if err != nil || len(variants) != 1 || variants[0].Link != masterResolvedVariant {
 		test.Fatalf(masterInvalidResultFormat, variants, err)
 	}

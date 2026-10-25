@@ -29,7 +29,10 @@ func DownloadTSFiles(operationContext context.Context, logger progress.Logger, p
 	httpClient := client.NewStreamingClient(nil)
 	defer httpClient.Close()
 
-	reader := client.New(httpClient)
+	reader, err := client.New(httpClient)
+	if err != nil {
+		return nil, err
+	}
 
 	return downloadTSFiles(operationContext, logger, playlist, reader, httpClient)
 }
@@ -63,7 +66,7 @@ func downloadTSFiles(
 	loadStage := newLoadStage(httpClient)
 	consumeStage, listOfFiles := newConsumeStage(logger, len(segmentMetas))
 
-	downloadPipeline := pipeline.NewPipeline()
+	downloadPipeline := pipeline.NewPipeline[segmentMeta]()
 	downloadPipeline.AppendProducer(produceStage)
 	downloadPipeline.AppendMedium(loadStage)
 	downloadPipeline.AppendFinalizer(consumeStage)
@@ -96,7 +99,7 @@ type segmentMeta struct {
 	fileName string
 }
 
-func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage {
+func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage[segmentMeta] {
 	nextSegmentIndex := 0
 	getNext := func(context.Context) (segmentMeta, error, bool) {
 		if nextSegmentIndex == len(segmentMetas) {
@@ -112,7 +115,7 @@ func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage {
 	return pipeline.NewProduceStage(getNext)
 }
 
-func newLoadStage(httpClient client.StreamingClient) pipeline.ProcessStage {
+func newLoadStage(httpClient client.StreamingClient) pipeline.ProcessStage[segmentMeta] {
 	return pipeline.NewProcessStage(func(operationContext context.Context, meta segmentMeta) (segmentMeta, error) {
 		operationContext, cancel := context.WithTimeout(operationContext, segmentDownloadTimeout)
 		defer cancel()
@@ -121,7 +124,7 @@ func newLoadStage(httpClient client.StreamingClient) pipeline.ProcessStage {
 	})
 }
 
-func newConsumeStage(logger progress.Logger, segmentCount int) (pipeline.FinalizeStage, []string) {
+func newConsumeStage(logger progress.Logger, segmentCount int) (pipeline.FinalizeStage[segmentMeta], []string) {
 	completedSegmentCount := 0
 	listOfFiles := make([]string, segmentCount)
 

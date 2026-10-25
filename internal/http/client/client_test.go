@@ -25,6 +25,14 @@ const (
 const fixtureURL = "https://example.test/metadata"
 const fixtureBody = "metadata"
 
+func TestConstructorRejectsMissingClient(test *testing.T) {
+	const acceptedMessage = "accepted missing streaming HTTP client"
+
+	if reader, err := New(nil); err == nil || reader != nil {
+		test.Fatal(acceptedMessage)
+	}
+}
+
 type responseDoer struct {
 	status int
 	body   *trackedBody
@@ -59,7 +67,10 @@ func TestReadClosesResponse(test *testing.T) {
 			body := &trackedBody{Reader: reader}
 			doer := &responseDoer{status: status, body: body}
 
-			client := New(doer)
+			client, clientConstructorError := New(doer)
+			if clientConstructorError != nil {
+				test.Fatal(clientConstructorError)
+			}
 
 			response, err := client.Read(context.Background(), fixtureURL)
 			if status == http.StatusOK {
@@ -87,7 +98,11 @@ func TestReadRejectsOversizedResponse(test *testing.T) {
 
 	doer := &responseDoer{status: http.StatusOK, body: body}
 
-	client := New(doer)
+	client, clientConstructorError := New(doer)
+	if clientConstructorError != nil {
+		test.Fatal(clientConstructorError)
+	}
+
 	if _, err := client.Read(context.Background(), fixtureURL); err == nil {
 		test.Fatal(readOversizeAcceptedMessage)
 	}
@@ -103,7 +118,10 @@ func TestReadCanceledBeforeRequest(test *testing.T) {
 
 	doer := &responseDoer{}
 
-	client := New(doer)
+	client, clientConstructorError := New(doer)
+	if clientConstructorError != nil {
+		test.Fatal(clientConstructorError)
+	}
 
 	_, err := client.Read(operationContext, fixtureURL)
 	if !errors.Is(err, context.Canceled) || doer.calls != 0 {
@@ -134,14 +152,17 @@ func TestReadCancelsStalledRequest(test *testing.T) {
 	finished := make(chan struct{})
 	doer := &blockingDoer{started: started, finished: finished}
 
+	client, clientConstructorError := New(doer)
+	if clientConstructorError != nil {
+		test.Fatal(clientConstructorError)
+	}
+
 	operationContext, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	done := make(chan struct{})
 
 	go func() {
 		defer close(done)
-
-		client := New(doer)
 
 		_, err := client.Read(operationContext, fixtureURL)
 		result <- err

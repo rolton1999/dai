@@ -2,26 +2,25 @@ package pipeline
 
 import (
 	"context"
-	"errors"
 	"sync"
-)
-
-const (
-	pipelineFinalizerTypeMismatchMessage = "pipeline finalizer type mismatch"
 )
 
 type FinalizeFunc[TInput any] = func(context.Context, TInput) error
 
-type FinalizeStage interface {
+type FinalizeStage[TInput any] interface {
 	run(
 		context.Context,
-		<-chan any,
+		<-chan TInput,
 		func(error),
 		*sync.WaitGroup,
 	)
 }
 
-func NewFinalizeStage[TInput any](finalize FinalizeFunc[TInput]) FinalizeStage {
+func NewFinalizeStage[TInput any](finalize FinalizeFunc[TInput]) FinalizeStage[TInput] {
+	if finalize == nil {
+		return nil
+	}
+
 	return &finalizeStageImpl[TInput]{finalize: finalize}
 }
 
@@ -31,7 +30,7 @@ type finalizeStageImpl[TInput any] struct {
 
 func (finalizer *finalizeStageImpl[TInput]) run(
 	operationContext context.Context,
-	input <-chan any,
+	input <-chan TInput,
 	report func(error),
 	workers *sync.WaitGroup,
 ) {
@@ -49,13 +48,7 @@ func (finalizer *finalizeStageImpl[TInput]) run(
 					return
 				}
 
-				typed, valid := value.(TInput)
-				if !valid {
-					report(errors.New(pipelineFinalizerTypeMismatchMessage))
-					return
-				}
-
-				if err := finalizer.finalize(operationContext, typed); err != nil {
+				if err := finalizer.finalize(operationContext, value); err != nil {
 					report(err)
 					return
 				}

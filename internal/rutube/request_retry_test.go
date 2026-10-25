@@ -1,6 +1,7 @@
 package rutube
 
 import (
+	"context"
 	"io"
 	"net"
 	"net/http"
@@ -57,7 +58,7 @@ func TestVideoInfoRetriesInterruptedResponse(test *testing.T) {
 
 		http.DefaultClient = &http.Client{Transport: transport}
 
-		info, err := GetVideoInfo(retryVideoID)
+		info, err := GetVideoInfo(context.Background(), retryVideoID)
 		if err != nil || attempts != 2 || info.MasterPlaylistLink == "" {
 			test.Fatalf("info=%v attempts=%d error=%v", info, attempts, err)
 		}
@@ -108,7 +109,7 @@ func TestPlaylistRetryDoesNotDuplicateEarlierPages(test *testing.T) {
 
 		http.DefaultClient = &http.Client{Transport: transport}
 
-		info, err := GetPlaylistInfo(retryPlaylistID)
+		info, err := GetPlaylistInfo(context.Background(), retryPlaylistID)
 		if err != nil || secondPageAttempts != 2 || len(info.VideoIDs) != expectedVideos {
 			test.Fatalf("info=%v attempts=%d error=%v", info, secondPageAttempts, err)
 		}

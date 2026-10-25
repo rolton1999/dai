@@ -15,37 +15,36 @@ import (
 )
 
 const (
-	noStdinFlag         = "-nostdin"
-	noOverwriteFlag     = "-n"
-	failOnErrorFlag     = "-xerror"
-	inputFormatFlag     = "-f"
-	concatFormat        = "concat"
-	concatSafetyFlag    = "-safe"
-	allowAbsolutePaths  = "0"
-	inputFlag           = "-i"
-	codecFlag           = "-c"
-	copyCodec           = "copy"
-	audioFilterFlag     = "-bsf:a"
-	aacBitstreamFilter  = "aac_adtstoasc"
-	verbosityFlag       = "-v"
-	errorVerbosity      = "error"
-	probeEntriesFlag    = "-show_entries"
-	probeEntries        = "format=format_name,duration:stream=codec_type"
-	probeFormatFlag     = "-of"
-	probeJSONFormat     = "json"
-	manifestEntryFormat = "file '%s'\n"
-	lineBreaks          = "\r\n"
-	concatQuote         = "'"
-	escapedConcatQuote  = "'\\''"
+	noStdinFlag          = "-nostdin"
+	overwriteStagingFlag = "-y"
+	failOnErrorFlag      = "-xerror"
+	inputFormatFlag      = "-f"
+	concatFormat         = "concat"
+	concatSafetyFlag     = "-safe"
+	allowAbsolutePaths   = "0"
+	inputFlag            = "-i"
+	codecFlag            = "-c"
+	copyCodec            = "copy"
+	audioFilterFlag      = "-bsf:a"
+	aacBitstreamFilter   = "aac_adtstoasc"
+	verbosityFlag        = "-v"
+	errorVerbosity       = "error"
+	probeEntriesFlag     = "-show_entries"
+	probeEntries         = "format=format_name,duration:stream=codec_type"
+	probeFormatFlag      = "-of"
+	probeJSONFormat      = "json"
+	manifestEntryFormat  = "file '%s'\n"
+	lineBreaks           = "\r\n"
+	concatQuote          = "'"
+	escapedConcatQuote   = "'\\''"
 )
 
 const (
-	conversionWorkspacePattern = ".dai-conversion-*"
-	conversionStagedFilename   = "result.mp4"
-	expectedFormat             = "mp4"
-	formatSeparator            = ","
-	probeNumberBitSize         = 64
-	videoCodecType             = "video"
+	conversionFilePermissions = 0o666
+	expectedFormat            = "mp4"
+	formatSeparator           = ","
+	probeNumberBitSize        = 64
+	videoCodecType            = "video"
 )
 
 const (
@@ -73,6 +72,8 @@ type processRunner interface {
 	Run(context.Context, string, []string) ([]byte, error)
 }
 
+// Convert writes a validated MP4 to a new staging path in a caller-owned
+// directory. The caller publishes the file only after Convert succeeds.
 type Converter interface {
 	Convert(
 		context.Context,
@@ -112,6 +113,22 @@ func (converter *converterImpl) Convert(
 		return err
 	}
 
+	staging, err := os.OpenFile(resultPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, conversionFilePermissions)
+	if err != nil {
+		return err
+	}
+
+	converted := false
+	defer func() {
+		if !converted {
+			resultError = errors.Join(resultError, os.Remove(resultPath))
+		}
+	}()
+
+	if err := staging.Close(); err != nil {
+		return err
+	}
+
 	manifestPath, err := createConcatManifest(segments)
 	if err != nil {
 		return err
@@ -121,23 +138,12 @@ func (converter *converterImpl) Convert(
 		resultError = errors.Join(resultError, os.Remove(manifestPath))
 	}()
 
-	workspace, err := os.MkdirTemp(filepath.Dir(resultPath), conversionWorkspacePattern)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		resultError = errors.Join(resultError, os.RemoveAll(workspace))
-	}()
-
-	stagedPath := filepath.Join(workspace, conversionStagedFilename)
-
-	arguments := conversionArguments(manifestPath, stagedPath)
+	arguments := conversionArguments(manifestPath, resultPath)
 	if err := converter.convert(operationContext, logger, arguments); err != nil {
 		return err
 	}
 
-	if err := converter.validateOutput(operationContext, stagedPath); err != nil {
+	if err := converter.validateOutput(operationContext, resultPath); err != nil {
 		return err
 	}
 
@@ -145,7 +151,9 @@ func (converter *converterImpl) Convert(
 		return err
 	}
 
-	return os.Link(stagedPath, resultPath)
+	converted = true
+
+	return nil
 }
 
 func (converter *converterImpl) validateOutput(operationContext context.Context, stagedPath string) error {
@@ -291,7 +299,7 @@ func writeConcatManifest(manifest *os.File, segments []string) error {
 
 func conversionArguments(manifestPath string, stagedPath string) []string {
 	return []string{
-		noStdinFlag, noOverwriteFlag, failOnErrorFlag,
+		noStdinFlag, overwriteStagingFlag, failOnErrorFlag,
 		inputFormatFlag, concatFormat,
 		concatSafetyFlag, allowAbsolutePaths,
 		inputFlag, manifestPath,

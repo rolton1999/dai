@@ -114,7 +114,14 @@ type fixtureStreams struct {
 func (streams *fixtureStreams) Variants(operationContext context.Context, _ string) ([]hls.VariantPlaylist, error) {
 	streams.calls++
 	reader := &variantFixtureReader{}
-	streamsClient := hls.New(reader, nil)
+
+	network := client.NewStreamingClient(nil)
+	defer network.Close()
+
+	streamsClient, streamsClientConstructorError := hls.New(reader, network)
+	if streamsClientConstructorError != nil {
+		return nil, streamsClientConstructorError
+	}
 
 	return streamsClient.Variants(operationContext, fixtureMasterURL)
 }

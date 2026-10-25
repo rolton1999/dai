@@ -70,8 +70,16 @@ func TestMetadataRetryPolicy(test *testing.T) {
 					httpClient := &http.Client{Transport: transport}
 					streamingClient := client.NewStreamingClient(httpClient)
 					test.Cleanup(streamingClient.Close)
-					reader := client.New(streamingClient)
-					provider := newMetadataProvider(reader)
+
+					reader, readerConstructorError := client.New(streamingClient)
+					if readerConstructorError != nil {
+						test.Fatal(readerConstructorError)
+					}
+
+					provider, providerConstructorError := New(reader)
+					if providerConstructorError != nil {
+						test.Fatal(providerConstructorError)
+					}
 
 					started := time.Now()
 

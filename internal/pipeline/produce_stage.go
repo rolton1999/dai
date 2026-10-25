@@ -9,11 +9,15 @@ const producerQueueSize = 8
 
 type ProduceFunc[TOutput any] = func(context.Context) (TOutput, error, bool)
 
-type ProduceStage interface {
-	run(context.Context, func(error), *sync.WaitGroup) <-chan any
+type ProduceStage[TOutput any] interface {
+	run(context.Context, func(error), *sync.WaitGroup) <-chan TOutput
 }
 
-func NewProduceStage[TOutput any](produce ProduceFunc[TOutput]) ProduceStage {
+func NewProduceStage[TOutput any](produce ProduceFunc[TOutput]) ProduceStage[TOutput] {
+	if produce == nil {
+		return nil
+	}
+
 	return &produceStageImpl[TOutput]{produce: produce}
 }
 
@@ -21,8 +25,8 @@ type produceStageImpl[TOutput any] struct {
 	produce ProduceFunc[TOutput]
 }
 
-func (producer *produceStageImpl[TOutput]) run(operationContext context.Context, report func(error), workers *sync.WaitGroup) <-chan any {
-	output := make(chan any, producerQueueSize)
+func (producer *produceStageImpl[TOutput]) run(operationContext context.Context, report func(error), workers *sync.WaitGroup) <-chan TOutput {
+	output := make(chan TOutput, producerQueueSize)
 
 	workers.Go(func() {
 		defer close(output)

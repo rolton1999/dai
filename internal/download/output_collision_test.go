@@ -132,7 +132,7 @@ func TestPlaylistFilenameCheckPreservesExistingFiles(test *testing.T) {
 		test.Fatal(err)
 	}
 
-	err := checkPlaylistFilenames(test.Context(), directory, []string{target, target})
+	err := checkPlaylistFilenames(test.Context(), directory, []downloadJob{{target: target}, {target: target}})
 	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf(duplicatePlaylistOutputFormat, target)) {
 		test.Fatalf(collisionUnexpectedResult, err, 0)
 	}

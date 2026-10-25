@@ -21,6 +21,50 @@ const (
 
 var errFixtureStage = errors.New(stageFailureMessage)
 
+func TestPipelineRejectsMissingCallbacksBeforeStartingWork(test *testing.T) {
+	const (
+		producerCase    = "producer"
+		processorCase   = "processor"
+		finalizerCase   = "finalizer"
+		acceptedMessage = "accepted a missing pipeline callback"
+	)
+
+	for _, missing := range []string{producerCase, processorCase, finalizerCase} {
+		test.Run(missing, func(test *testing.T) {
+			producer := pipeline.NewProduceStage(func(context.Context) (int, error, bool) {
+				test.Error(unexpectedOutputMessage)
+				return 0, nil, true
+			})
+			processor := pipeline.NewProcessStage(func(_ context.Context, item int) (int, error) {
+				test.Error(unexpectedOutputMessage)
+				return item, nil
+			})
+			finalizer := pipeline.NewFinalizeStage(func(context.Context, int) error {
+				test.Error(unexpectedOutputMessage)
+				return nil
+			})
+
+			switch missing {
+			case producerCase:
+				producer = pipeline.NewProduceStage[int](nil)
+			case processorCase:
+				processor = pipeline.NewProcessStage[int](nil)
+			case finalizerCase:
+				finalizer = pipeline.NewFinalizeStage[int](nil)
+			}
+
+			flow := pipeline.NewPipeline[int]()
+			flow.AppendProducer(producer)
+			flow.AppendMedium(processor)
+			flow.AppendFinalizer(finalizer)
+
+			if err := flow.Run(test.Context()); err == nil {
+				test.Fatal(acceptedMessage)
+			}
+		})
+	}
+}
+
 func TestPipelinePropagatesProducerFailure(test *testing.T) {
 	operationContext, cancel := context.WithTimeout(context.Background(), pipelineTestDeadline)
 	defer cancel()
@@ -32,7 +76,7 @@ func TestPipelinePropagatesProducerFailure(test *testing.T) {
 		test.Error(unexpectedOutputMessage)
 		return nil
 	})
-	flow := pipeline.NewPipeline()
+	flow := pipeline.NewPipeline[int]()
 	flow.AppendProducer(producer)
 	flow.AppendFinalizer(finalizer)
 
@@ -85,7 +129,7 @@ func TestPipelineCancelsAndJoinsWorkers(test *testing.T) {
 		test.Error(unexpectedOutputMessage)
 		return nil
 	})
-	flow := pipeline.NewPipeline()
+	flow := pipeline.NewPipeline[int]()
 	flow.AppendProducer(producer)
 	flow.AppendMedium(processor)
 	flow.AppendFinalizer(finalizer)
@@ -109,7 +153,7 @@ func TestPipelinePropagatesFinalizerFailure(test *testing.T) {
 	finalizer := pipeline.NewFinalizeStage(func(context.Context, int) error {
 		return errFixtureStage
 	})
-	flow := pipeline.NewPipeline()
+	flow := pipeline.NewPipeline[int]()
 	flow.AppendProducer(producer)
 	flow.AppendFinalizer(finalizer)
 
@@ -137,7 +181,7 @@ func TestPipelineHonorsCallerCancellation(test *testing.T) {
 		test.Error(unexpectedOutputMessage)
 		return nil
 	})
-	flow := pipeline.NewPipeline()
+	flow := pipeline.NewPipeline[int]()
 	flow.AppendProducer(producer)
 	flow.AppendFinalizer(finalizer)
 
@@ -162,7 +206,7 @@ func TestPipelineDoesNotStartCanceledCallbacks(test *testing.T) {
 		test.Error(unexpectedOutputMessage)
 		return nil
 	})
-	flow := pipeline.NewPipeline()
+	flow := pipeline.NewPipeline[int]()
 	flow.AppendProducer(producer)
 	flow.AppendFinalizer(finalizer)
 
@@ -182,7 +226,7 @@ func TestPipelineRejectsMissingStages(test *testing.T) {
 	})
 
 	for _, includeProducer := range []bool{false, true} {
-		flow := pipeline.NewPipeline()
+		flow := pipeline.NewPipeline[int]()
 		if includeProducer {
 			flow.AppendProducer(producer)
 		} else {
@@ -191,41 +235,6 @@ func TestPipelineRejectsMissingStages(test *testing.T) {
 
 		if err := flow.Run(context.Background()); err == nil {
 			test.Fatal(acceptedMessage)
-		}
-	}
-}
-
-func TestPipelineRejectsMismatchedStages(test *testing.T) {
-	const acceptedMessage = "accepted incompatible stage types"
-
-	for _, mismatchProcessor := range []bool{false, true} {
-		operationContext, cancel := context.WithTimeout(context.Background(), pipelineTestDeadline)
-		producer := pipeline.NewProduceStage(func(context.Context) (int, error, bool) {
-			return 1, nil, false
-		})
-		processor := pipeline.NewProcessStage(func(context.Context, string) (string, error) {
-			test.Error(unexpectedOutputMessage)
-			return "", nil
-		})
-		finalizer := pipeline.NewFinalizeStage(func(context.Context, string) error {
-			test.Error(unexpectedOutputMessage)
-			return nil
-		})
-		flow := pipeline.NewPipeline()
-		flow.AppendProducer(producer)
-
-		if mismatchProcessor {
-			flow.AppendMedium(processor)
-		}
-
-		flow.AppendFinalizer(finalizer)
-
-		err := flow.Run(operationContext)
-
-		cancel()
-
-		if err == nil || errors.Is(err, context.DeadlineExceeded) {
-			test.Fatalf(acceptedMessage+": %v", err)
 		}
 	}
 }
@@ -241,7 +250,7 @@ func TestPipelineMultipleProducersAndFinalizers(test *testing.T) {
 	defer cancel()
 
 	delivered := make([]atomic.Int32, producerCount*stageItemCount)
-	flow := pipeline.NewPipeline()
+	flow := pipeline.NewPipeline[int]()
 
 	for producerIndex := range producerCount {
 		nextItem := 0

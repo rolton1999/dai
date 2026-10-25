@@ -36,7 +36,7 @@ const (
 	resumeLockBusy            = "playlist resume state is already in use: %w"
 	resumeOnlyPlaylistMessage = "resume is supported only for playlists"
 	resumeOverwriteMessage    = "resume cannot be combined with overwrite"
-	resumeUnknownTarget       = "output is missing from the resume manifest: %s"
+	resumeUnknownTarget       = "video is missing from the resume manifest: %s"
 )
 
 type resumeManifest struct {
@@ -67,7 +67,6 @@ func newPlaylistRecovery(directory string, playlistID string) (*playlistRecovery
 	videos := make(map[string]resumeVideo)
 	manifest := resumeManifest{Version: resumeVersion, PlaylistID: playlistID, Videos: videos}
 	byFilename := make(map[string]string)
-	completed := make(map[string]bool)
 
 	recovery := &playlistRecovery{
 		directory:  directory,
@@ -75,7 +74,6 @@ func newPlaylistRecovery(directory string, playlistID string) (*playlistRecovery
 		lock:       lock,
 		manifest:   manifest,
 		byFilename: byFilename,
-		completed:  completed,
 	}
 	if err := recovery.load(); err != nil {
 		return nil, errors.Join(fmt.Errorf(resumeStateError, err), lock.Close())
@@ -91,30 +89,17 @@ type playlistRecovery struct {
 	lock       *resumeLock
 	manifest   resumeManifest
 	byFilename map[string]string
-	completed  map[string]bool
 }
 
 func (recovery *playlistRecovery) Close() error {
-	if recovery == nil {
-		return nil
-	}
-
 	return recovery.lock.Close()
 }
 
 func (recovery *playlistRecovery) filename(videoID string) string {
-	if recovery == nil {
-		return ""
-	}
-
 	return recovery.manifest.Videos[videoID].Filename
 }
 
 func (recovery *playlistRecovery) inspect(operationContext context.Context, videoID string) (bool, error) {
-	if recovery == nil {
-		return false, nil
-	}
-
 	video, exists := recovery.manifest.Videos[videoID]
 	if !exists {
 		return false, nil
@@ -152,16 +137,10 @@ func (recovery *playlistRecovery) inspect(operationContext context.Context, vide
 		return false, fmt.Errorf(resumeOutputMismatch, target)
 	}
 
-	recovery.completed[video.Filename] = true
-
 	return true, nil
 }
 
 func (recovery *playlistRecovery) add(videoID string, filename string) error {
-	if recovery == nil {
-		return nil
-	}
-
 	if owner, exists := recovery.byFilename[filename]; exists && owner != videoID {
 		return fmt.Errorf(duplicatePlaylistOutputFormat, filename)
 	}
@@ -174,15 +153,7 @@ func (recovery *playlistRecovery) add(videoID string, filename string) error {
 	return nil
 }
 
-func (recovery *playlistRecovery) isComplete(target string) bool {
-	return recovery != nil && recovery.completed[filepath.Base(target)]
-}
-
-func (recovery *playlistRecovery) prepare(operationContext context.Context, target string, staging string) error {
-	if recovery == nil {
-		return nil
-	}
-
+func (recovery *playlistRecovery) prepare(operationContext context.Context, videoID string, staging string) error {
 	digest, size, err := checksumResumeFile(operationContext, staging)
 	if err != nil {
 		return err
@@ -191,14 +162,11 @@ func (recovery *playlistRecovery) prepare(operationContext context.Context, targ
 	recovery.mutex.Lock()
 	defer recovery.mutex.Unlock()
 
-	filename := filepath.Base(target)
-
-	videoID, exists := recovery.byFilename[filename]
+	video, exists := recovery.manifest.Videos[videoID]
 	if !exists {
-		return fmt.Errorf(resumeUnknownTarget, filename)
+		return fmt.Errorf(resumeUnknownTarget, videoID)
 	}
 
-	video := recovery.manifest.Videos[videoID]
 	video.Size = size
 	video.SHA256 = digest
 	recovery.manifest.Videos[videoID] = video
@@ -300,10 +268,6 @@ func validResumeFilename(filename string) bool {
 }
 
 func (recovery *playlistRecovery) save() (resultError error) {
-	if recovery == nil {
-		return nil
-	}
-
 	body, err := json.MarshalIndent(recovery.manifest, "", resumeJSONIndent)
 	if err != nil {
 		return err

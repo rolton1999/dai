@@ -208,7 +208,11 @@ func TestHTTP200ErrorJSONIsNotSuccessfulMetadata(test *testing.T) {
 			httpClient := &http.Client{Transport: transport}
 			streamingClient := client.NewStreamingClient(httpClient)
 			test.Cleanup(streamingClient.Close)
-			reader := client.New(streamingClient)
+
+			reader, readerConstructorError := client.New(streamingClient)
+			if readerConstructorError != nil {
+				test.Fatal(readerConstructorError)
+			}
 
 			var err error
 			if playlist {

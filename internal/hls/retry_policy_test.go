@@ -61,7 +61,7 @@ func TestPlaylistRetryPolicy(test *testing.T) {
 
 					var err error
 					if kind == masterCase {
-						_, err = GetVariantPlaylists(masterFixtureURL)
+						_, err = GetVariantPlaylists(context.Background(), masterFixtureURL)
 					} else {
 						playlist := VariantPlaylist{Link: masterFixtureURL}
 						_, err = collectSegmentMetas(context.Background(), playlist, "", "")

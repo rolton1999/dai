@@ -123,14 +123,26 @@ func TestLocalHTTPDownloadAndConversion(test *testing.T) {
 	doer := &localDoer{serverURL: server.URL, client: httpClient}
 	defer doer.Close()
 
-	reader := client.New(doer)
+	reader, readerConstructorError := client.New(doer)
+	if readerConstructorError != nil {
+		test.Fatal(readerConstructorError)
+	}
+
 	temporaryRoot := test.TempDir()
 	outputDirectory := test.TempDir()
 
 	test.Setenv(localTemporaryKey, temporaryRoot)
 
-	provider := rutube.New(reader)
-	streams := hls.New(reader, doer)
+	provider, providerConstructorError := rutube.New(reader)
+	if providerConstructorError != nil {
+		test.Fatal(providerConstructorError)
+	}
+
+	streams, streamsConstructorError := hls.New(reader, doer)
+	if streamsConstructorError != nil {
+		test.Fatal(streamsConstructorError)
+	}
+
 	converter := ffmpeg.New(nil)
 	logger := progress.NewLogger()
 

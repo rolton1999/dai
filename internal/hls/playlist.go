@@ -34,14 +34,21 @@ const (
 	playlistResponseURLIsMissingMessage = "playlist response URL is missing"
 )
 
-func GetVariantPlaylists(masterPlaylistLink string) ([]VariantPlaylist, error) {
+func GetVariantPlaylists(operationContext context.Context, masterPlaylistLink string) ([]VariantPlaylist, error) {
 	httpClient := client.NewStreamingClient(nil)
 	defer httpClient.Close()
 
-	reader := client.New(httpClient)
-	provider := newPlaylistClient(reader)
+	reader, err := client.New(httpClient)
+	if err != nil {
+		return nil, err
+	}
 
-	return provider.Variants(context.Background(), masterPlaylistLink)
+	provider, err := New(reader, httpClient)
+	if err != nil {
+		return nil, err
+	}
+
+	return provider.Variants(operationContext, masterPlaylistLink)
 }
 
 func getVariantPlaylistsWithReader(

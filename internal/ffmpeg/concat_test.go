@@ -7,10 +7,98 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 )
+
+type blockedConversionRunner struct {
+	started  chan struct{}
+	release  chan struct{}
+	delegate *fixtureRunner
+}
+
+func (runner *blockedConversionRunner) Run(operationContext context.Context, name string, arguments []string) ([]byte, error) {
+	if name == ffmpegName {
+		close(runner.started)
+
+		select {
+		case <-runner.release:
+		case <-operationContext.Done():
+			return nil, operationContext.Err()
+		}
+	}
+
+	return runner.delegate.Run(operationContext, name, arguments)
+}
+
+func TestConversionReservesStagingWithoutOverwritingAnotherConversion(test *testing.T) {
+	const (
+		unexpectedCompetitor   = "competing conversion touched reserved output: %v"
+		conversionDidNotStart  = "conversion did not start before deadline"
+		conversionDidNotFinish = "conversion did not finish before deadline"
+	)
+
+	operationContext, cancel := context.WithTimeout(test.Context(), conversionFixtureTimeout)
+	defer cancel()
+
+	directory := test.TempDir()
+	segment := filepath.Join(directory, fixtureSegment)
+	output := filepath.Join(directory, fixtureResult)
+
+	if err := os.WriteFile(segment, []byte(fixtureData), fixturePermission); err != nil {
+		test.Fatal(err)
+	}
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	delegate := &fixtureRunner{}
+	runner := &blockedConversionRunner{started: started, release: release, delegate: delegate}
+	converter := New(runner)
+	logger := &conversionLogger{}
+	results := make(chan error, 1)
+
+	var workers sync.WaitGroup
+
+	test.Cleanup(func() {
+		cancel()
+		workers.Wait()
+	})
+	workers.Go(func() {
+		results <- converter.Convert(operationContext, logger, []string{segment}, output)
+	})
+
+	select {
+	case <-started:
+	case <-operationContext.Done():
+		test.Fatal(conversionDidNotStart)
+	}
+
+	competitorRunner := &fixtureRunner{}
+	competitor := New(competitorRunner)
+
+	err := competitor.Convert(operationContext, logger, []string{segment}, output)
+	if err == nil || competitorRunner.manifest != "" {
+		test.Fatalf(unexpectedCompetitor, err)
+	}
+
+	close(release)
+
+	select {
+	case err := <-results:
+		if err != nil {
+			test.Fatal(err)
+		}
+	case <-operationContext.Done():
+		test.Fatal(conversionDidNotFinish)
+	}
+
+	body, err := os.ReadFile(output)
+	if err != nil || string(body) != fixtureData {
+		test.Fatalf(concatTestExistingOutputChanged, body, err)
+	}
+}
 
 const (
 	fixtureSegment    = "segment's.ts"
