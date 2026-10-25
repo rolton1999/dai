@@ -102,8 +102,8 @@ Regression fixtures reproduce HTTP 404/503 being accepted as successful metadata
 or playlists before the fix, including valid-looking bodies on error responses.
 Tests also cover success, body closure, malformed success JSON and a missing
 playlist through the public API. Required JSON field validation, injectable HTTP
-readers and response limits are completed below. Retry classification remains
-separate work.
+readers and response limits are completed below. Retry classification is
+completed in the following section.
 
 Live checksum scripts and unchanged reference hashes now live in `tests/e2e`.
 Makefile targets use the new path; the script resolves the project root two levels
@@ -160,6 +160,40 @@ cleanup and cancellation checks passed after these changes.
 Pipeline-wide shutdown, output safety and other later sections remain separate
 work. Live Rutube checks
 were not rerun for this HTTP/validation change.
+
+## Retry policy and deterministic backoff tests
+
+Implemented independently on `codex/fix-retry-policy-and-test-delays`, based on
+`master` at `64c0a10`. This extracts permanent-error handling from
+`codex/fix-all-known-bugs` without increasing the retry budget.
+
+Metadata and HLS requests retry HTTP 408/429/500/502/503/504 and interrupted
+transfers or network failures. Other HTTP statuses, invalid requests, malformed
+JSON, malformed HLS and unsupported HLS features stop immediately. An HTTP
+`url.Error` wrapper is unwrapped before classification, so a permanent underlying
+failure is not mistaken for a transient network error. Shared classification
+lives in `internal/http/client` and is also used by segment transfers.
+`retry.MarkAsNotRetryable` preserves error messages and the wrapped error chain. Metadata and
+playlist operations retain three attempts with 1 s / 2 s backoff and their
+existing two-minute deadlines; segment budgets and backoff are unchanged.
+
+Retry and download regression tests use `testing/synctest` virtual time with
+in-process HTTP transports. Tests verify exact backoff, deadline interruption,
+cancellation, permanent-error propagation, recovery from transient failures and
+no duplicate playlist entries. Policy fixtures cover video metadata, playlist
+titles, both playlist pages, and master/media playlists; they assert request
+counts and virtual elapsed time. Shared policy fixtures cover all retryable
+statuses, permanent statuses, wrapped transfer errors, cancellation and local
+file errors. No test adds `time.Sleep`, live Rutube requests or FFmpeg execution.
+Required-field validation, request/body limits and client cleanup from the merged
+metadata branch are preserved. Retry classification runs at the injected metadata
+and HLS operation boundaries.
+
+Verification: build, pinned lint and the full race-enabled suite pass. A second
+lint check requires no fixes. Fifty race-enabled repetitions of retry, HTTP policy,
+HLS and Rutube tests pass. The race-enabled HLS package fell from approximately
+18 s to 1.7 s locally; backoff assertions now run entirely in virtual time.
+Live-service compatibility was not rerun for this policy change.
 
 ## 4. Propagate pipeline errors and own temporary data
 

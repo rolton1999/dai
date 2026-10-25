@@ -2,6 +2,7 @@ package retry
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -25,6 +26,11 @@ func Do(operationContext context.Context, operation func(context.Context) error)
 			return operationContext.Err()
 		}
 
+		var notRetryable *notRetryableError
+		if errors.As(err, &notRetryable) {
+			return err
+		}
+
 		if attemptIndex == retries-1 {
 			return err
 		}
@@ -39,4 +45,24 @@ func Do(operationContext context.Context, operation func(context.Context) error)
 	}
 
 	return nil
+}
+
+func MarkAsNotRetryable(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	return &notRetryableError{cause: err}
+}
+
+type notRetryableError struct {
+	cause error
+}
+
+func (failure *notRetryableError) Error() string {
+	return failure.cause.Error()
+}
+
+func (failure *notRetryableError) Unwrap() error {
+	return failure.cause
 }

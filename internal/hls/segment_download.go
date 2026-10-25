@@ -3,10 +3,8 @@ package hls
 import (
 	"context"
 	"dai/internal/http/client"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"time"
@@ -64,7 +62,7 @@ func downloadSegmentAttempt(operationContext context.Context, httpClient client.
 
 	response, err := httpClient.Do(request)
 	if err != nil {
-		return retryableSegmentTransfer(err), err
+		return client.RetryableError(err), err
 	}
 
 	defer func() {
@@ -72,12 +70,7 @@ func downloadSegmentAttempt(operationContext context.Context, httpClient client.
 	}()
 
 	if response.StatusCode != http.StatusOK {
-		retry := response.StatusCode == http.StatusRequestTimeout ||
-			response.StatusCode == http.StatusTooManyRequests ||
-			response.StatusCode == http.StatusInternalServerError ||
-			response.StatusCode == http.StatusBadGateway ||
-			response.StatusCode == http.StatusServiceUnavailable ||
-			response.StatusCode == http.StatusGatewayTimeout
+		retry := client.RetryableStatus(response.StatusCode)
 
 		return retry, fmt.Errorf(segmentStatusError, response.StatusCode)
 	}
@@ -96,7 +89,7 @@ func downloadSegmentAttempt(operationContext context.Context, httpClient client.
 
 	if copyErr != nil {
 		_ = os.Remove(meta.fileName)
-		return retryableSegmentTransfer(copyErr), fmt.Errorf(segmentWriteError, copyErr)
+		return client.RetryableError(copyErr), fmt.Errorf(segmentWriteError, copyErr)
 	}
 
 	if closeErr != nil {
@@ -105,21 +98,6 @@ func downloadSegmentAttempt(operationContext context.Context, httpClient client.
 	}
 
 	return false, nil
-}
-
-func retryableSegmentTransfer(err error) bool {
-	if errors.Is(err, context.Canceled) {
-		return false
-	}
-
-	var fileError *os.PathError
-	if errors.As(err, &fileError) {
-		return false
-	}
-
-	var networkError net.Error
-
-	return errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) || errors.As(err, &networkError)
 }
 
 func waitForSegmentRetry(operationContext context.Context, delay time.Duration) error {
