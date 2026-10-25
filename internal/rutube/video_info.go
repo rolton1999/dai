@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	metadataRequestTimeout         = 2 * time.Minute
+	metadataRequestTimeout         = 5 * time.Minute
 	videoRequestErrorFormat        = "cannot read video metadata: %w"
 	metadataReadErrorFormat        = "cannot read body: %w"
 	metadataDecodeErrorFormat      = "cannot unmarshal body: %w"
@@ -26,12 +26,12 @@ const (
 
 type VideoInfo struct {
 	Title              string
-	MasterPlaylistLink string // m3u8
+	MasterPlaylistLink string
 }
 
-func (vi VideoInfo) String() string {
-	const template = "{\n\ttitle: %s,\n\tmasterPlaylistLink: %s\n}"
-	return fmt.Sprintf(template, vi.Title, vi.MasterPlaylistLink)
+func (videoInfo VideoInfo) String() string {
+	const videoInfoDisplayFormat = "{\n\ttitle: %s,\n\tmasterPlaylistLink: %s\n}"
+	return fmt.Sprintf(videoInfoDisplayFormat, videoInfo.Title, videoInfo.MasterPlaylistLink)
 }
 
 func GetVideoInfo(videoID string) (VideoInfo, error) {

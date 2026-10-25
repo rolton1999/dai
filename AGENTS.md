@@ -31,9 +31,8 @@ catch-all contracts package.
 
 At the repository root, `Makefile` owns build, pinned lint, and test commands;
 `.golangci.yml` defines lint and formatting rules; `.github/workflows/lint.yml`
-runs checks in CI; and `bugs.md` records known defects and their test plan.
-The package table describes responsibilities; unresolved ownership defects remain
-tracked in `bugs.md` until implementation and tests are complete.
+runs checks in CI. `README.md` describes test coverage and live-service verification
+limits. The package table describes responsibilities.
 
 ## Go API and file organization
 
@@ -159,8 +158,8 @@ may remain together.
 ## Checks and tests
 
 - Run `make build`, `make lint`, and `make test` before pushing.
-- `make lint` applies automatic fixes. Inspect those changes and rerun checks when
-  they affect behavior. Keep `containedctx` enabled.
+- `make lint` includes integration-tagged files and applies automatic fixes.
+  Inspect those changes and rerun checks when they affect behavior. Keep `containedctx` enabled.
 - `make test` runs Go tests with race detection. Prefer observable behavior over
   implementation details. Keep tests independent of live Rutube and an installed
   FFmpeg unless they are explicitly designated integration or smoke tests.
@@ -174,7 +173,7 @@ may remain together.
   use retries, skips, or repeat counts to excuse intermittent failures.
 - `make test-small` and `make test-big` access live Rutube and require FFmpeg.
   They are opt-in smoke tests, not substitutes for deterministic automated tests.
-  Their current cleanup behavior is a known defect tracked in `bugs.md`.
+  They alias the isolated single-video and playlist checksum tests.
 
 ```sh
 make build
@@ -192,5 +191,5 @@ make test
   conversion as successful output.
 - Preserve existing user files. Cleanup must affect only artifacts owned by the
   operation; live smoke tests must not delete unrelated files.
-- Document tested scenarios and unresolved gaps in `bugs.md`. Local HTTP fixtures
-  and process doubles do not prove compatibility with the live Rutube service.
+- Document tested scenarios and unresolved verification gaps in `README.md`. Local
+  HTTP fixtures and process doubles do not prove compatibility with live Rutube.

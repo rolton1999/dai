@@ -1,6 +1,11 @@
 # DAI
 
-Download a Rutube video or playlist to MP4. Requires Go and FFmpeg/FFprobe.
+A Go command-line downloader for Rutube videos and playlists. Selects the highest
+resolution HLS variant and saves it as MP4 using FFmpeg, without re-encoding.
+
+## Usage
+
+Requires Go 1.25 or later to build, and `ffmpeg` and `ffprobe` on `PATH` to run.
 
 ```sh
 make build
@@ -8,38 +13,51 @@ make build
 ./bin/dai --output ./videos https://rutube.ru/plst/1840659/
 ```
 
-Flags must precede the URL. `--output` defaults to the current directory.
-`--overwrite` explicitly allows replacing existing output files. Existing files
-otherwise cause an error before segment downloads start. Duplicate playlist
-filenames are rejected before any video downloads start, including with overwrite.
-A playlist publishes completed videos individually; an error preserves earlier
-completed videos.
+Flags must precede the URL:
 
-Accepted links use HTTPS and the exact `rutube.ru` host, with `/video/<32 hex ID>`
-or `/plst/<positive numeric ID>`, optionally followed by a slash, query or fragment.
+| Flag | Description |
+| --- | --- |
+| `--output <directory>` | Destination directory; defaults to the current directory. |
+| `--overwrite` | Allow replacing existing output files. |
 
-Titles become filenames: separators and control characters become underscores,
-leading/trailing dots and spaces are trimmed, leading hyphens are prefixed, and
-names are limited to 200 UTF-8 bytes before `.mp4`. Empty names become `video.mp4`.
-Outputs stay in the selected directory. Conversion uses private temporary files,
-validates the MP4 using FFprobe, and publishes it atomically. Failed operations
-remove their own temporary data and preserve existing destinations.
+Accepts HTTPS links on `rutube.ru` with `/video/<32 hex ID>` or
+`/plst/<positive numeric ID>`. A trailing slash, query, or fragment is allowed.
 
-HLS supports finite, unencrypted MPEG-TS playlists with segments in playlist order.
-Master attributes may be reordered and quoted; relative URLs use the final URL
-after redirects. The highest resolution is selected, with bandwidth breaking ties.
-Separate audio/video tracks, encryption, byte ranges, initialization maps and live
-or partial playlists are rejected explicitly. HTTP requests, retries, individual
-segments and conversion have bounded deadlines; Ctrl-C cancels active work.
+## Download behavior
+
+Uses video titles as filenames, replacing separators and control characters with
+underscores, trimming surrounding dots and spaces, and prefixing leading hyphens
+with an underscore. Names are limited to 200 UTF-8 bytes before `.mp4`;
+empty names become `video.mp4`.
+
+Existing destinations require `--overwrite`. Duplicate playlist filenames are
+rejected before downloading, even with overwrite enabled. Each MP4 is validated
+with FFprobe before atomic publication. Failures remove operation-owned temporary
+files and preserve existing destinations; completed playlist videos remain
+available if a later download fails. Network retries have bounded deadlines;
+Ctrl-C cancels active work.
+
+Supports complete, unencrypted MPEG-TS HLS playlists in segment order. Resolution
+determines variant selection; bandwidth breaks ties. Relative URLs resolve after
+redirects. Separate media tracks, encryption, byte ranges, initialization maps,
+and live or partial playlists are rejected.
+
+## Development
 
 ```sh
-make lint
-make test
-go test -tags=integration -race ./...
+make build
+make lint              # Pinned linter; applies fixes, including integration sources
+make test              # Race-enabled tests; no Rutube or FFmpeg required
+make test-integration  # Local HTTP fixtures and real FFmpeg/FFprobe
 ```
 
-The integration tests generate local media and use FFmpeg/FFprobe without
-accessing Rutube. Ordinary tests use process doubles and need neither executable.
-Live checksum tests are opt-in: `make e2e-single` and `make e2e-playlist` use
-temporary directories. See [tests/e2e/README.md](tests/e2e/README.md) for reference
-checksums and [bugs.md](bugs.md) for verification coverage.
+Tests cover parsing, retries, cancellation, worker shutdown, output collisions,
+concurrent publication, and cleanup, with fuzz targets for both HLS parsers.
+Integration tests cover redirects, segment downloads, conversion, MP4 validation,
+unusual filenames, and failure reporting. CI runs lint, unit, and integration checks.
+
+Live checksum tests are opt-in: `make e2e-single` and `make e2e-playlist`.
+`make test-all` runs all suites, stopping on failure. See
+[live test requirements and reference checksums](tests/e2e/README.md).
+Local fixtures do not establish live Rutube compatibility; live checksum tests
+have not been rerun against the current implementation.

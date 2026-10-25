@@ -16,8 +16,8 @@ const (
 	policyVideoPath         = "/api/play/options/video-id/"
 	policyMalformedJSON     = `{invalid`
 	policyWrongJSONType     = `[]`
-	policyTransientAttempts = 3
-	policyTransientDelay    = 3 * time.Second
+	policyTransientAttempts = 5
+	policyTransientDelay    = 10 * time.Second
 	policyResultFormat      = "requests=%d elapsed=%s error=%v"
 )
 

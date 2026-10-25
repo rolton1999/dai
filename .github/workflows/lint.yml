@@ -18,7 +18,8 @@ jobs:
           persist-credentials: false
       - name: Go toolchain version
         run: go version
-      - run: make lint
+      - name: Check lint and formatting without modifying sources
+        run: make lint LINT_FIX=false
 
   test:
     runs-on: ubuntu-24.04
@@ -31,3 +32,4 @@ jobs:
       - name: Go toolchain version
         run: go version
       - run: make test
+

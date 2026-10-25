@@ -44,8 +44,8 @@ func TestRetryRecovers(test *testing.T) {
 func TestRetryExhaustsAttempts(test *testing.T) {
 	synctest.Test(test, func(test *testing.T) {
 		const (
-			expectedAttempts = 3
-			expectedDelay    = 3 * time.Second
+			expectedAttempts = 5
+			expectedDelay    = 10 * time.Second
 		)
 
 		attempts := 0
@@ -110,6 +110,30 @@ func TestRetryDeadlineInterruptsBackoff(test *testing.T) {
 		})
 		if attempts != 1 || time.Since(started) != deadline || !errors.Is(err, context.DeadlineExceeded) {
 			test.Fatalf(unexpectedRetryFormat, attempts, time.Since(started), err)
+		}
+	})
+}
+
+func TestRetryRecoversOnFinalAttempt(test *testing.T) {
+	const (
+		expectedAttempts = 5
+		expectedDelay    = 10 * time.Second
+	)
+
+	synctest.Test(test, func(test *testing.T) {
+		attempts := 0
+		started := time.Now()
+
+		err := Do(test.Context(), func(context.Context) error {
+			attempts++
+			if attempts < expectedAttempts {
+				return errRetryFixture
+			}
+
+			return nil
+		})
+		if err != nil || attempts != expectedAttempts || time.Since(started) != expectedDelay {
+			test.Fatalf(retryFixtureErrorFormat, attempts, time.Since(started), err)
 		}
 	})
 }

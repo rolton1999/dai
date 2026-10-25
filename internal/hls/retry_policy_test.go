@@ -16,8 +16,8 @@ func TestPlaylistRetryPolicy(test *testing.T) {
 		encryptedBody     = "#EXTM3U\n#EXT-X-SESSION-KEY:METHOD=AES-128\n#EXT-X-KEY:METHOD=AES-128\n"
 		masterCase        = "master"
 		mediaCase         = "media"
-		transientAttempts = 3
-		transientDelay    = 3 * time.Second
+		transientAttempts = 5
+		transientDelay    = 10 * time.Second
 		resultFormat      = "requests=%d elapsed=%s error=%v"
 	)
 
