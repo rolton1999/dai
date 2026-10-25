@@ -44,23 +44,3 @@ func Do(operationContext context.Context, operation func(context.Context) error)
 
 	return nil
 }
-
-func MarkAsNotRetryable(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	return &notRetryableError{cause: err}
-}
-
-type notRetryableError struct {
-	cause error
-}
-
-func (failure *notRetryableError) Error() string {
-	return failure.cause.Error()
-}
-
-func (failure *notRetryableError) Unwrap() error {
-	return failure.cause
-}

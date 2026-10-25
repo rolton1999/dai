@@ -19,7 +19,7 @@ type metadataClient struct {
 	reader client.Client
 }
 
-func (provider *metadataClient) Video(operationContext context.Context, videoID string) (VideoInfo, error) {
+func (client *metadataClient) Video(operationContext context.Context, videoID string) (VideoInfo, error) {
 	operationContext, cancel := context.WithTimeout(operationContext, metadataRequestTimeout)
 	defer cancel()
 
@@ -28,7 +28,7 @@ func (provider *metadataClient) Video(operationContext context.Context, videoID 
 	err := retry.Do(operationContext, func(attemptContext context.Context) error {
 		var err error
 
-		result, err = getVideoInfoWithReader(attemptContext, provider.reader, videoID)
+		result, err = getVideoInfoWithReader(attemptContext, client.reader, videoID)
 
 		return err
 	})
@@ -36,7 +36,7 @@ func (provider *metadataClient) Video(operationContext context.Context, videoID 
 	return result, err
 }
 
-func (provider *metadataClient) Playlist(operationContext context.Context, playlistID string) (PlaylistInfo, error) {
+func (client *metadataClient) Playlist(operationContext context.Context, playlistID string) (PlaylistInfo, error) {
 	operationContext, cancel := context.WithTimeout(operationContext, metadataRequestTimeout)
 	defer cancel()
 
@@ -45,7 +45,7 @@ func (provider *metadataClient) Playlist(operationContext context.Context, playl
 	err := retry.Do(operationContext, func(attemptContext context.Context) error {
 		var err error
 
-		result, err = getPlaylistInfoWithReader(attemptContext, provider.reader, playlistID)
+		result, err = getPlaylistInfoWithReader(attemptContext, client.reader, playlistID)
 
 		return err
 	})

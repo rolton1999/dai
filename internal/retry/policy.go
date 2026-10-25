@@ -43,3 +43,23 @@ func IsRetryable(err error) bool {
 
 	return errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) || errors.As(err, &networkError)
 }
+
+func MarkAsNotRetryable(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	return &notRetryableError{cause: err}
+}
+
+type notRetryableError struct {
+	cause error
+}
+
+func (failure *notRetryableError) Error() string {
+	return failure.cause.Error()
+}
+
+func (failure *notRetryableError) Unwrap() error {
+	return failure.cause
+}
