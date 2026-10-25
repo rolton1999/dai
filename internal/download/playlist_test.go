@@ -2,10 +2,12 @@ package download
 
 import (
 	"context"
+	"dai/internal/ffmpeg"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -16,6 +18,34 @@ import (
 	"dai/internal/progress"
 	"dai/internal/rutube"
 )
+
+func TestPlaylistFailureQuotesRemoteTitle(test *testing.T) {
+	const (
+		remoteTitle               = "title\x1b[2J\x1b[H\nforged message"
+		quotedTitleFormat         = "%q"
+		terminalControlCharacters = "\x1b\n"
+		unexpectedTitle           = "remote title was not safely quoted: %q"
+	)
+
+	provider := &parallelProvider{identifiers: []string{remoteTitle}}
+	streams := &parallelStreams{}
+	converter := conversionAdapter(func(context.Context, progress.Logger, ffmpeg.Input, string) error {
+		return errors.New(parallelFailureMessage)
+	})
+	logger := &fixtureLogger{}
+
+	service, err := New(provider, streams, converter, logger)
+	if err != nil {
+		test.Fatal(err)
+	}
+
+	directory := test.TempDir()
+
+	err = service.Playlist(test.Context(), parallelPlaylistID, Options{Jobs: 1, OutputDirectory: directory})
+	if err == nil || strings.ContainsAny(err.Error(), terminalControlCharacters) || !strings.Contains(err.Error(), fmt.Sprintf(quotedTitleFormat, remoteTitle)) {
+		test.Fatalf(unexpectedTitle, err)
+	}
+}
 
 const (
 	parallelItemCount         = 16
@@ -102,6 +132,10 @@ func (artifact *parallelArtifact) Files() []string {
 	return []string{artifact.identifier}
 }
 
+func (*parallelArtifact) Duration() float64 {
+	return fixtureDurationSeconds
+}
+
 func (artifact *parallelArtifact) Close() error {
 	artifact.streams.closed.Add(1)
 	artifact.streams.active.Add(-1)
@@ -117,10 +151,10 @@ type parallelConverter struct {
 func (converter *parallelConverter) Convert(
 	operationContext context.Context,
 	logger progress.Logger,
-	files []string,
+	input ffmpeg.Input,
 	output string,
 ) error {
-	identifier := files[0]
+	identifier := input.Files[0]
 
 	logger.UpdateWithSuffix(parallelConverting)
 

@@ -16,12 +16,13 @@ import (
 )
 
 const (
-	corruptSegmentName   = "corrupt.ts"
-	corruptMiddleCase    = "middle"
-	corruptLastCase      = "last"
-	corruptPartialOutput = "corrupt segment published a partial output: %v"
-	corruptArtifacts     = "conversion left unexpected artifacts: %v, %v"
-	corruptInputCount    = 2
+	fixtureDurationSeconds = 1
+	corruptSegmentName     = "corrupt.ts"
+	corruptMiddleCase      = "middle"
+	corruptLastCase        = "last"
+	corruptPartialOutput   = "corrupt segment published a partial output: %v"
+	corruptArtifacts       = "conversion left unexpected artifacts: %v, %v"
+	corruptInputCount      = 2
 )
 
 func TestConcatRejectsCorruptSegmentsAfterValidInput(test *testing.T) {
@@ -54,7 +55,7 @@ func TestConcatRejectsCorruptSegmentsAfterValidInput(test *testing.T) {
 			converter := ffmpeg.New(nil)
 
 			logger := &fixtureLogger{}
-			if err := converter.Convert(operationContext, logger, segments, output); err == nil {
+			if err := converter.Convert(operationContext, logger, ffmpeg.Input{Files: segments, ExpectedDuration: fixtureDurationSeconds}, output); err == nil {
 				test.Fatal(fixtureFalseSuccessError)
 			}
 
@@ -134,7 +135,7 @@ func TestConcatAcceptsColonAndOptionLikeOutputNames(test *testing.T) {
 			converter := ffmpeg.New(nil)
 
 			logger := &fixtureLogger{}
-			if err := converter.Convert(operationContext, logger, []string{segment}, name); err != nil {
+			if err := converter.Convert(operationContext, logger, ffmpeg.Input{Files: []string{segment}, ExpectedDuration: fixtureDurationSeconds}, name); err != nil {
 				test.Fatal(err)
 			}
 
@@ -168,7 +169,7 @@ func TestConcatIncludesDiagnosticsAndDoesNotReportSuccessOnFailure(test *testing
 
 	converter := ffmpeg.New(nil)
 
-	err := converter.Convert(operationContext, logger, []string{segment}, fixturePlainOutput)
+	err := converter.Convert(operationContext, logger, ffmpeg.Input{Files: []string{segment}, ExpectedDuration: fixtureDurationSeconds}, fixturePlainOutput)
 	if err == nil || !strings.Contains(err.Error(), fixtureSegmentName) {
 		test.Fatalf(fixtureDiagnosticsError, err)
 	}

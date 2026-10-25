@@ -5,6 +5,7 @@ import (
 	"dai/internal/http/client"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,19 +18,23 @@ import (
 )
 
 const (
-	lifecycleDeadline         = 5 * time.Second
-	singleSegmentPlaylist     = "#EXTM3U\n#EXTINF:1,\nsegment-1.ts\n#EXT-X-ENDLIST\n"
-	halfProgress              = " ~ loading 50%"
-	fullProgress              = " ~ loading 100%"
-	unrelatedFilename         = "keep.ts"
-	unrelatedContents         = "user data"
-	lifecyclePermissions      = 0o600
-	unexpectedProgressFormat  = "progress=%v expected=%v"
-	unexpectedSegmentsFormat  = "segments=%v error=%v"
-	unexpectedSegmentFormat   = "segment %d=%q error=%v"
-	artifactStillExistsFormat = "artifact directory still exists: %v"
-	unrelatedChangedFormat    = "unrelated file=%q error=%v"
-	artifactMutatedMessage    = "caller changed the artifact's file list"
+	singleDurationSeconds       = 1
+	multipleDurationSeconds     = 7.874
+	durationComparisonTolerance = 0.000001
+	unexpectedDurationFormat    = "duration=%v expected=%v"
+	lifecycleDeadline           = 5 * time.Second
+	singleSegmentPlaylist       = "#EXTM3U\n#EXTINF:1,\nsegment-1.ts\n#EXT-X-ENDLIST\n"
+	halfProgress                = " ~ loading 50%"
+	fullProgress                = " ~ loading 100%"
+	unrelatedFilename           = "keep.ts"
+	unrelatedContents           = "user data"
+	lifecyclePermissions        = 0o600
+	unexpectedProgressFormat    = "progress=%v expected=%v"
+	unexpectedSegmentsFormat    = "segments=%v error=%v"
+	unexpectedSegmentFormat     = "segment %d=%q error=%v"
+	artifactStillExistsFormat   = "artifact directory still exists: %v"
+	unrelatedChangedFormat      = "unrelated file=%q error=%v"
+	artifactMutatedMessage      = "caller changed the artifact's file list"
 )
 
 type recordingLogger struct {
@@ -56,9 +61,10 @@ func TestArtifactOrderingProgressAndCleanup(test *testing.T) {
 		playlist string
 		bodies   []string
 		progress []string
+		duration float64
 	}{
-		{name: "single segment", playlist: singleSegmentPlaylist, bodies: []string{fixtureFirstSegmentBody}, progress: []string{fullProgress}},
-		{name: "reverse completion", playlist: fixtureMinimalPlaylist, bodies: []string{fixtureFirstSegmentBody, fixtureSecondSegmentBody}, progress: []string{halfProgress, fullProgress}},
+		{name: "single segment", playlist: singleSegmentPlaylist, bodies: []string{fixtureFirstSegmentBody}, progress: []string{fullProgress}, duration: singleDurationSeconds},
+		{name: "reverse completion", playlist: fixtureMinimalPlaylist, bodies: []string{fixtureFirstSegmentBody, fixtureSecondSegmentBody}, progress: []string{halfProgress, fullProgress}, duration: multipleDurationSeconds},
 	}
 	for _, fixture := range fixtures {
 		test.Run(fixture.name, func(test *testing.T) {
@@ -97,6 +103,10 @@ func TestArtifactOrderingProgressAndCleanup(test *testing.T) {
 					test.Error(err)
 				}
 			})
+
+			if math.Abs(artifact.Duration()-fixture.duration) > durationComparisonTolerance {
+				test.Fatalf(unexpectedDurationFormat, artifact.Duration(), fixture.duration)
+			}
 
 			files := artifact.Files()
 			if len(files) != len(fixture.bodies) {

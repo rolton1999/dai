@@ -7,6 +7,20 @@ FFmpeg input/conversion errors fail the operation. Ctrl-C or the first failure
 stops further scheduling and cancels active work; workers finish cleanup before
 exit. Completed playlist videos remain available if another video fails.
 
+The MP4 duration must cover the sum of HLS segment durations, allowing 5% of that
+duration (capped at 250 ms) for timestamp and muxer rounding. Shorter output
+fails validation and is removed before publication or recording a completed
+resume entry. This check detects
+duration loss; it does not verify every decoded frame or detect substituted
+content of the same duration. Inaccurate upstream duration metadata can also
+cause rejection.
+
+Publication without overwrite uses a hard link or, on macOS and Linux, an atomic
+exclusive rename when links are unsupported. Both refuse existing destinations,
+including files created by another downloader during the operation. DAI probes
+the output filesystem before downloading video data and fails early if neither
+method is supported. Overwrite uses atomic rename directly.
+
 Existing destinations require `--overwrite`. Duplicate playlist filenames are
 rejected before downloading, even with overwrite enabled, using the destination
 filesystem's case and Unicode normalization rules. Titles become filenames:

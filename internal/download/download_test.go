@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"dai/internal/ffmpeg"
 	"errors"
 	"io"
 	"net/http"
@@ -18,26 +19,28 @@ import (
 )
 
 const (
-	fixtureVideoID            = "fixture-video"
-	fixtureVideoPath          = "/api/play/options/fixture-video/"
-	fixtureMasterPath         = "/master.m3u8"
-	fixtureMediaPath          = "/media.m3u8"
-	fixtureSegmentPath        = "/segment.ts"
-	fixtureVideoBody          = `{"title":"video","video_balancer":{"m3u8":"https://example.test/master.m3u8"}}`
-	fixtureMasterBody         = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000,RESOLUTION=1280x720\nmedia.m3u8\n"
-	fixtureMediaBody          = "#EXTM3U\n#EXTINF:1,\nsegment.ts\n#EXT-X-ENDLIST\n"
-	fixtureSegmentBody        = "complete segment"
-	fixtureTemporaryKey       = "TMPDIR"
-	fixturePermissions        = 0o600
-	fixtureUnrelatedName      = "unrelated.ts"
-	fixtureConversionExtra    = "conversion.tmp"
-	fixtureConversionFailure  = "conversion failed"
-	fixtureDeadline           = 5 * time.Second
-	unexpectedResultFormat    = "error=%v conversions=%d newlines=%d"
-	unexpectedInputFormat     = "input=%q error=%v"
-	unexpectedFilesFormat     = "files=%v"
-	unexpectedOutputFormat    = "output=%q"
-	unexpectedArtifactsFormat = "temporary artifacts=%v error=%v"
+	fixtureDurationSeconds           = 1
+	unexpectedExpectedDurationFormat = "expected duration not forwarded: %v"
+	fixtureVideoID                   = "fixture-video"
+	fixtureVideoPath                 = "/api/play/options/fixture-video/"
+	fixtureMasterPath                = "/master.m3u8"
+	fixtureMediaPath                 = "/media.m3u8"
+	fixtureSegmentPath               = "/segment.ts"
+	fixtureVideoBody                 = `{"title":"video","video_balancer":{"m3u8":"https://example.test/master.m3u8"}}`
+	fixtureMasterBody                = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000,RESOLUTION=1280x720\nmedia.m3u8\n"
+	fixtureMediaBody                 = "#EXTM3U\n#EXTINF:1,\nsegment.ts\n#EXT-X-ENDLIST\n"
+	fixtureSegmentBody               = "complete segment"
+	fixtureTemporaryKey              = "TMPDIR"
+	fixturePermissions               = 0o600
+	fixtureUnrelatedName             = "unrelated.ts"
+	fixtureConversionExtra           = "conversion.tmp"
+	fixtureConversionFailure         = "conversion failed"
+	fixtureDeadline                  = 5 * time.Second
+	unexpectedResultFormat           = "error=%v conversions=%d newlines=%d"
+	unexpectedInputFormat            = "input=%q error=%v"
+	unexpectedFilesFormat            = "files=%v"
+	unexpectedOutputFormat           = "output=%q"
+	unexpectedArtifactsFormat        = "temporary artifacts=%v error=%v"
 )
 
 type fixtureTransport func(*http.Request) (*http.Response, error)
@@ -125,25 +128,29 @@ func TestDownloadOwnsTemporaryFilesThroughConversion(test *testing.T) {
 			convert := func(
 				_ context.Context,
 				_ progress.Logger,
-				files []string,
+				input ffmpeg.Input,
 				output string,
 			) error {
 				conversions++
 
-				if len(files) != 1 {
-					test.Fatalf(unexpectedFilesFormat, files)
+				if input.ExpectedDuration != fixtureDurationSeconds {
+					test.Fatalf(unexpectedExpectedDurationFormat, input.ExpectedDuration)
+				}
+
+				if len(input.Files) != 1 {
+					test.Fatalf(unexpectedFilesFormat, input.Files)
 				}
 
 				if filepath.Base(output) != stagingFilename {
 					test.Fatalf(unexpectedOutputFormat, output)
 				}
 
-				body, err := os.ReadFile(files[0])
+				body, err := os.ReadFile(input.Files[0])
 				if err != nil || string(body) != fixtureSegmentBody {
 					test.Fatalf(unexpectedInputFormat, body, err)
 				}
 
-				extraPath := filepath.Join(filepath.Dir(files[0]), fixtureConversionExtra)
+				extraPath := filepath.Join(filepath.Dir(input.Files[0]), fixtureConversionExtra)
 				if err := os.WriteFile(extraPath, []byte(fixtureSegmentBody), fixturePermissions); err != nil {
 					test.Fatal(err)
 				}
@@ -212,15 +219,15 @@ func TestDownloadOwnsTemporaryFilesThroughConversion(test *testing.T) {
 type conversionAdapter func(
 	context.Context,
 	progress.Logger,
-	[]string,
+	ffmpeg.Input,
 	string,
 ) error
 
 func (convert conversionAdapter) Convert(
 	operationContext context.Context,
 	logger progress.Logger,
-	files []string,
+	input ffmpeg.Input,
 	output string,
 ) error {
-	return convert(operationContext, logger, files, output)
+	return convert(operationContext, logger, input, output)
 }

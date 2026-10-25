@@ -144,6 +144,8 @@ func parseSegmentMetas(body string, baseURL *url.URL, filePrefix string) ([]segm
 
 	waitingForURI, ended := false, false
 
+	var duration float64
+
 	for _, line := range lines[1:] {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -157,7 +159,9 @@ func parseSegmentMetas(body string, baseURL *url.URL, filePrefix string) ([]segm
 
 			durationText, _, hasSeparator := strings.Cut(strings.TrimPrefix(line, mediaSegmentDurationTag), ",")
 
-			duration, err := strconv.ParseFloat(durationText, 64)
+			parsedDuration, err := strconv.ParseFloat(durationText, 64)
+
+			duration = parsedDuration
 			if !hasSeparator || err != nil || duration <= 0 || math.IsNaN(duration) || math.IsInf(duration, 0) {
 				return nil, errors.New(invalidSegmentDurationMessage)
 			}
@@ -218,7 +222,7 @@ func parseSegmentMetas(body string, baseURL *url.URL, filePrefix string) ([]segm
 		}
 
 		segmentIndex := len(segments)
-		segments = append(segments, segmentMeta{index: segmentIndex, link: resolved.String(), fileName: filePrefix + mediaSegmentSeparator + strconv.Itoa(segmentIndex) + mediaSegmentExtension})
+		segments = append(segments, segmentMeta{duration: duration, index: segmentIndex, link: resolved.String(), fileName: filePrefix + mediaSegmentSeparator + strconv.Itoa(segmentIndex) + mediaSegmentExtension})
 		waitingForURI = false
 	}
 

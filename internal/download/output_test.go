@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"dai/internal/ffmpeg"
 	"dai/internal/hls"
 	"dai/internal/http/client"
 	"dai/internal/progress"
@@ -139,6 +140,10 @@ func (artifact *fixtureArtifact) Files() []string {
 	return nil
 }
 
+func (*fixtureArtifact) Duration() float64 {
+	return fixtureDurationSeconds
+}
+
 func (artifact *fixtureArtifact) Close() error {
 	artifact.closed = true
 	return artifact.failure
@@ -152,7 +157,7 @@ type fixtureConverter struct {
 func (converter *fixtureConverter) Convert(
 	_ context.Context,
 	_ progress.Logger,
-	_ []string,
+	_ ffmpeg.Input,
 	result string,
 ) error {
 	converter.calls++
@@ -307,7 +312,7 @@ type barrierConverter struct {
 func (converter *barrierConverter) Convert(
 	operationContext context.Context,
 	_ progress.Logger,
-	_ []string,
+	_ ffmpeg.Input,
 	result string,
 ) error {
 	if err := os.WriteFile(result, []byte(testContents), testPermissions); err != nil {
@@ -473,7 +478,7 @@ func TestZeroExitWithoutUsableOutputNeverPublishes(test *testing.T) {
 			converter := conversionAdapter(func(
 				_ context.Context,
 				_ progress.Logger,
-				_ []string,
+				_ ffmpeg.Input,
 				output string,
 			) error {
 				if emptyFile {

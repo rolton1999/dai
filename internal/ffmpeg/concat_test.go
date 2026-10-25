@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,48 @@ import (
 	"testing/synctest"
 	"time"
 )
+
+func TestConversionRejectsShortOutputAndInvalidExpectedDuration(test *testing.T) {
+	const (
+		shortExpectedDuration     = 8
+		toleratedExpectedDuration = 1.04
+		unexpectedDurationResult  = "expected duration %v: %v"
+	)
+
+	for _, expected := range []float64{shortExpectedDuration, toleratedExpectedDuration, 0, -fixtureDurationSeconds, math.NaN(), math.Inf(1)} {
+		test.Run(fmt.Sprint(expected), func(test *testing.T) {
+			directory := test.TempDir()
+			segment := filepath.Join(directory, fixtureSegment)
+			result := filepath.Join(directory, fixtureResult)
+
+			if err := os.WriteFile(segment, []byte(fixtureData), fixturePermission); err != nil {
+				test.Fatal(err)
+			}
+
+			runner := &fixtureRunner{}
+			converter := New(runner)
+			logger := &conversionLogger{}
+			input := Input{Files: []string{segment}, ExpectedDuration: expected}
+
+			err := converter.Convert(test.Context(), logger, input, result)
+			if expected == toleratedExpectedDuration {
+				if err != nil {
+					test.Fatalf(unexpectedDurationResult, expected, err)
+				}
+
+				return
+			}
+
+			if err == nil {
+				test.Fatalf(unexpectedDurationResult, expected, err)
+			}
+
+			if _, err := os.Lstat(result); !errors.Is(err, os.ErrNotExist) {
+				test.Fatalf(concatTestPartialOutputRemained, err)
+			}
+		})
+	}
+}
 
 type blockedConversionRunner struct {
 	started  chan struct{}
@@ -66,7 +109,7 @@ func TestConversionReservesStagingWithoutOverwritingAnotherConversion(test *test
 		workers.Wait()
 	})
 	workers.Go(func() {
-		results <- converter.Convert(operationContext, logger, []string{segment}, output)
+		results <- converter.Convert(operationContext, logger, Input{Files: []string{segment}, ExpectedDuration: fixtureDurationSeconds}, output)
 	})
 
 	select {
@@ -78,7 +121,7 @@ func TestConversionReservesStagingWithoutOverwritingAnotherConversion(test *test
 	competitorRunner := &fixtureRunner{}
 	competitor := New(competitorRunner)
 
-	err := competitor.Convert(operationContext, logger, []string{segment}, output)
+	err := competitor.Convert(operationContext, logger, Input{Files: []string{segment}, ExpectedDuration: fixtureDurationSeconds}, output)
 	if err == nil || competitorRunner.manifest != "" {
 		test.Fatalf(unexpectedCompetitor, err)
 	}
@@ -101,11 +144,12 @@ func TestConversionReservesStagingWithoutOverwritingAnotherConversion(test *test
 }
 
 const (
-	fixtureSegment    = "segment's.ts"
-	fixtureResult     = "result.mp4"
-	fixtureData       = "media"
-	validProbe        = `{"format":{"format_name":"mov,mp4","duration":"1"},"streams":[{"codec_type":"video"}]}`
-	fixturePermission = 0o600
+	fixtureDurationSeconds = 1
+	fixtureSegment         = "segment's.ts"
+	fixtureResult          = "result.mp4"
+	fixtureData            = "media"
+	validProbe             = `{"format":{"format_name":"mov,mp4","duration":"1"},"streams":[{"codec_type":"video"}]}`
+	fixturePermission      = 0o600
 )
 
 const (
@@ -223,7 +267,7 @@ func TestConversionFailureAndOwnership(test *testing.T) {
 			converter := New(runner)
 			logger := &conversionLogger{}
 
-			err := converter.Convert(context.Background(), logger, []string{segment}, result)
+			err := converter.Convert(context.Background(), logger, Input{Files: []string{segment}, ExpectedDuration: fixtureDurationSeconds}, result)
 			if (err == nil) != (mode == concatTestSuccess) {
 				test.Fatalf(concatTestUnexpectedConversionResult, err)
 			}
@@ -262,7 +306,7 @@ func TestConversionPreservesExistingOutput(test *testing.T) {
 	converter := New(runner)
 
 	logger := &conversionLogger{}
-	if err := converter.Convert(context.Background(), logger, []string{result}, result); err == nil {
+	if err := converter.Convert(context.Background(), logger, Input{Files: []string{result}, ExpectedDuration: fixtureDurationSeconds}, result); err == nil {
 		test.Fatal(concatTestAcceptedExistingOutput)
 	}
 
@@ -296,7 +340,7 @@ func TestConcurrentConversionsUseSeparateManifests(test *testing.T) {
 
 			converter := New(runner)
 			logger := &conversionLogger{}
-			err := converter.Convert(context.Background(), logger, []string{segment}, result)
+			err := converter.Convert(context.Background(), logger, Input{Files: []string{segment}, ExpectedDuration: fixtureDurationSeconds}, result)
 
 			manifests <- runner.manifest
 
@@ -357,7 +401,7 @@ func TestConversionRejectsInvalidOutputs(test *testing.T) {
 			converter := New(runner)
 
 			logger := &conversionLogger{}
-			if err := converter.Convert(test.Context(), logger, []string{segment}, result); err == nil {
+			if err := converter.Convert(test.Context(), logger, Input{Files: []string{segment}, ExpectedDuration: fixtureDurationSeconds}, result); err == nil {
 				test.Fatalf(conversionInvalidProbeMessage, err)
 			}
 
@@ -386,7 +430,7 @@ func TestConversionHonorsDeadline(test *testing.T) {
 		operationContext, cancel := context.WithTimeout(test.Context(), conversionFixtureTimeout)
 		defer cancel()
 
-		if err := converter.Convert(operationContext, logger, []string{segment}, result); !errors.Is(err, context.DeadlineExceeded) {
+		if err := converter.Convert(operationContext, logger, Input{Files: []string{segment}, ExpectedDuration: fixtureDurationSeconds}, result); !errors.Is(err, context.DeadlineExceeded) {
 			test.Fatalf(conversionTimeoutMessage, err)
 		}
 
@@ -406,7 +450,7 @@ func TestConversionCanceledBeforeStarting(test *testing.T) {
 	logger := &conversionLogger{}
 
 	result := filepath.Join(test.TempDir(), fixtureResult)
-	if err := converter.Convert(operationContext, logger, nil, result); !errors.Is(err, context.Canceled) || runner.manifest != "" {
+	if err := converter.Convert(operationContext, logger, Input{}, result); !errors.Is(err, context.Canceled) || runner.manifest != "" {
 		test.Fatalf(conversionPreCanceledMessage, err)
 	}
 }
