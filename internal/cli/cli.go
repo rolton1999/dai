@@ -14,12 +14,15 @@ const (
 	urlShouldNotBeEmptyMessage          = "url should not be empty"
 	downloadServiceIsRequiredMessage    = "download service is required"
 	expectedExactlyOneURLMessage        = "expected exactly one URL"
+	invalidJobsMessage                  = "jobs must be greater than zero"
 )
 
 const (
 	commandName   = "dai"
 	outputFlag    = "output"
 	overwriteFlag = "overwrite"
+	jobsFlag      = "jobs"
+	jobsHelp      = "maximum concurrent playlist videos"
 	outputHelp    = "directory for downloaded videos"
 	overwriteHelp = "replace existing output files"
 )
@@ -54,9 +57,15 @@ func (command *commandImpl) Run(operationContext context.Context, arguments []st
 	flags.SetOutput(io.Discard)
 	directory := flags.String(outputFlag, defaultOutputDirectory, outputHelp)
 
+	jobs := flags.Int(jobsFlag, download.DefaultJobs, jobsHelp)
+
 	overwrite := flags.Bool(overwriteFlag, false, overwriteHelp)
 	if err := flags.Parse(arguments); err != nil {
 		return err
+	}
+
+	if *jobs <= 0 {
+		return errors.New(invalidJobsMessage)
 	}
 
 	if flags.NArg() == 0 {
@@ -77,7 +86,7 @@ func (command *commandImpl) Run(operationContext context.Context, arguments []st
 		return err
 	}
 
-	options := download.Options{OutputDirectory: *directory, Overwrite: *overwrite}
+	options := download.Options{Jobs: *jobs, OutputDirectory: *directory, Overwrite: *overwrite}
 	if kind == singleVideo {
 		return command.service.Video(operationContext, contentID, options)
 	}

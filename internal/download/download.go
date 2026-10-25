@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -48,7 +49,15 @@ const (
 	leadingHyphen             = "-"
 )
 
+const DefaultJobs = 4
+
+const (
+	invalidJobsMessage       = "jobs must be greater than zero"
+	playlistVideoErrorFormat = "playlist item %d (%s): %w"
+)
+
 type Options struct {
+	Jobs            int
 	OutputDirectory string
 	Overwrite       bool
 }
@@ -94,10 +103,14 @@ func (service *serviceImpl) Video(operationContext context.Context, videoID stri
 		return err
 	}
 
-	return service.download(operationContext, info, target, options.Overwrite)
+	return service.download(operationContext, info, target, options.Overwrite, service.logger)
 }
 
 func (service *serviceImpl) Playlist(operationContext context.Context, playlistID string, options Options) error {
+	if options.Jobs < 0 {
+		return errors.New(invalidJobsMessage)
+	}
+
 	playlist, err := service.provider.Playlist(operationContext, playlistID)
 	if err != nil {
 		return err
@@ -132,13 +145,67 @@ func (service *serviceImpl) Playlist(operationContext context.Context, playlistI
 		targets = append(targets, target)
 	}
 
-	for index, info := range infos {
-		if err := service.download(operationContext, info, targets[index], options.Overwrite); err != nil {
-			return err
-		}
+	return service.downloadPlaylist(operationContext, infos, targets, options)
+}
+
+func (service *serviceImpl) downloadPlaylist(
+	operationContext context.Context,
+	infos []rutube.VideoInfo,
+	targets []string,
+	options Options,
+) error {
+	jobs := options.Jobs
+	if jobs == 0 {
+		jobs = DefaultJobs
 	}
 
-	return nil
+	jobs = min(jobs, len(infos))
+
+	operationContext, cancel := context.WithCancelCause(operationContext)
+	defer cancel(nil)
+
+	display := progress.NewPlaylist(service.logger, len(infos), jobs)
+	defer display.Close()
+
+	var (
+		workers    sync.WaitGroup
+		scheduling sync.Mutex
+	)
+
+	next := 0
+
+	for slot := range jobs {
+		workers.Go(func() {
+			for {
+				scheduling.Lock()
+				if operationContext.Err() != nil || next == len(infos) {
+					scheduling.Unlock()
+					return
+				}
+
+				index := next
+				next++
+				scheduling.Unlock()
+
+				logger := display.Item(slot, index)
+
+				err := service.download(operationContext, infos[index], targets[index], options.Overwrite, logger)
+				if err != nil {
+					cancel(fmt.Errorf(playlistVideoErrorFormat, index+1, infos[index].Title, err))
+				}
+
+				display.Finish(slot, err)
+
+				if err != nil {
+					return
+				}
+			}
+		})
+	}
+
+	workers.Wait()
+
+	return context.Cause(operationContext)
 }
 
 func (service *serviceImpl) download(
@@ -146,11 +213,12 @@ func (service *serviceImpl) download(
 	info rutube.VideoInfo,
 	target string,
 	overwrite bool,
+	logger progress.Logger,
 ) (resultError error) {
 	operationContext, cancel := context.WithTimeout(operationContext, videoTimeout)
 	defer cancel()
 
-	service.logger.NewPrefix(filepath.Base(target))
+	logger.NewPrefix(filepath.Base(target))
 
 	variants, err := service.streams.Variants(operationContext, info.MasterPlaylistLink)
 	if err != nil {
@@ -162,7 +230,7 @@ func (service *serviceImpl) download(
 		return err
 	}
 
-	artifact, err := service.streams.Download(operationContext, service.logger, best)
+	artifact, err := service.streams.Download(operationContext, logger, best)
 	if err != nil {
 		return err
 	}
@@ -170,8 +238,8 @@ func (service *serviceImpl) download(
 	defer func() {
 		resultError = errors.Join(resultError, artifact.Close())
 		if resultError == nil {
-			service.logger.UpdateWithSuffix(readyMessage)
-			service.logger.PrintNewLine()
+			logger.UpdateWithSuffix(readyMessage)
+			logger.PrintNewLine()
 		}
 	}()
 
@@ -185,7 +253,7 @@ func (service *serviceImpl) download(
 	}()
 
 	staging := filepath.Join(workspace, stagingFilename)
-	if err := service.converter.Convert(operationContext, service.logger, artifact.Files(), staging); err != nil {
+	if err := service.converter.Convert(operationContext, logger, artifact.Files(), staging); err != nil {
 		return err
 	}
 

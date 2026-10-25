@@ -5,7 +5,7 @@ LINT_FIX ?= true
 LINT_FLAGS ?= --build-tags=integration ./...
 TEST_FLAGS ?= -race -count=1
 
-.PHONY: build clean lint test test-integration test-all e2e e2e-single e2e-playlist test-small test-big
+.PHONY: build clean lint test test-integration test-all e2e e2e-single e2e-playlist e2e-playlist-parallel test-small test-big
 
 build:
 	mkdir -p bin
@@ -25,13 +25,16 @@ test-all:
 	$(MAKE) test-integration
 	$(MAKE) e2e
 
-e2e: e2e-single e2e-playlist
+e2e: e2e-single e2e-playlist e2e-playlist-parallel
 
 e2e-single: build
 	bash ./tests/e2e/run.sh single
 
 e2e-playlist: build
 	bash ./tests/e2e/run.sh playlist
+
+e2e-playlist-parallel: build
+	bash ./tests/e2e/run.sh playlist-parallel
 
 clean:
 	rm -f ./bin/dai

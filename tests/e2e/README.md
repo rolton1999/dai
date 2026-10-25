@@ -1,15 +1,25 @@
 # Live E2E tests
 
-Run `make e2e-single` or `make e2e-playlist` from the project root.
-`make e2e` runs both.
+Run these targets from the project root:
+
+| Target | Download |
+| --- | --- |
+| `make e2e-single` | Single video with `--jobs 1`. |
+| `make e2e-playlist` | Sequential playlist with `--jobs 1`. |
+| `make e2e-playlist-parallel` | Concurrent playlist with `--jobs 4`. |
+
+`make e2e` runs all three. Both playlist modes verify the same reference checksums
+in separate temporary directories. The concurrent test checks completed outputs;
+unit tests independently verify the worker limit and immediate slot reuse.
+
 Each target streams download/conversion progress and checksum results directly
-to the terminal and finishes with `E2E single: PASSED` or `E2E playlist: FAILED`
+to the terminal and finishes with `E2E single: PASSED` or `E2E playlist-parallel: FAILED`
 (as applicable), preserving a nonzero exit status on failure.
 It builds `cmd/dai`, downloads the single
 video and the complete playlist linked in `run.sh`, and checks every MP4 against
 `checksums.sha256`. Missing, extra, or changed files fail the test.
 
-Requires network access, FFmpeg, and `shasum`. Downloads and segments live in a
+Requires network access, FFmpeg/FFprobe, and `shasum`. Downloads and segments live in a
 temporary directory that is removed when the script exits. Existing user files
 are untouched.
 

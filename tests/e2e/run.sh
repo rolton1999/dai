@@ -7,11 +7,21 @@ checksum_file="$script_directory/checksums.sha256"
 single_url='https://rutube.ru/video/dace2feac379872d42e49b6b25c0587a/'
 playlist_url='https://rutube.ru/plst/1840659/'
 
+sequential_jobs=1
+parallel_jobs=4
+
 selection="${1:-}"
+checksum_selection="$selection"
+jobs="$sequential_jobs"
 case "$selection" in
     single) download_url="$single_url" ;;
     playlist) download_url="$playlist_url" ;;
-    *) echo "Usage: $0 single|playlist" >&2; exit 2 ;;
+    playlist-parallel)
+        download_url="$playlist_url"
+        checksum_selection="playlist"
+        jobs="$parallel_jobs"
+        ;;
+    *) echo "Usage: $0 single|playlist|playlist-parallel" >&2; exit 2 ;;
 esac
 
 workspace=""
@@ -30,22 +40,22 @@ finish() {
 }
 trap finish EXIT
 
-if ! grep -Eq "^[[:xdigit:]]{64}  $selection/" "$checksum_file"; then
+if ! grep -Eq "^[[:xdigit:]]{64}  $checksum_selection/" "$checksum_file"; then
     echo "Add manually calculated $selection checksums to $checksum_file first." >&2
     exit 1
 fi
 
 workspace="$(mktemp -d "${TMPDIR:-/tmp}/dai-e2e.XXXXXX")"
-mkdir "$workspace/$selection" "$workspace/segments"
+mkdir "$workspace/$checksum_selection" "$workspace/segments"
 export TMPDIR="$workspace/segments"
 
-printf 'Downloading %s...\n' "$selection"
-(cd "$workspace/$selection" && "$project_directory/bin/dai" "$download_url")
+printf 'Downloading %s with --jobs %s...\n' "$selection" "$jobs"
+(cd "$workspace/$checksum_selection" && "$project_directory/bin/dai" --jobs "$jobs" "$download_url")
 
 printf '\nChecking %s checksums...\n' "$selection"
 cd "$workspace"
-grep -E "^[[:xdigit:]]{64}  $selection/" "$checksum_file" > selected.sha256
+grep -E "^[[:xdigit:]]{64}  $checksum_selection/" "$checksum_file" > selected.sha256
 awk '{ print substr($0, 67) }' selected.sha256 | LC_ALL=C sort > expected.files
-find "$selection" -type f -name '*.mp4' | LC_ALL=C sort > actual.files
+find "$checksum_selection" -type f -name '*.mp4' | LC_ALL=C sort > actual.files
 diff -u expected.files actual.files
 shasum -a 256 -c selected.sha256
