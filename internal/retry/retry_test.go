@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -15,7 +16,7 @@ const (
 	retryCanceledOperationMessage = "operation started after cancellation"
 )
 
-var errRetryFixture = errors.New("retry fixture failure")
+var errRetryFixture = io.ErrUnexpectedEOF
 
 func TestRetryRecovers(test *testing.T) {
 	const (

@@ -30,10 +30,6 @@ func (provider *metadataClient) Video(operationContext context.Context, videoID 
 
 		result, err = getVideoInfoWithReader(attemptContext, provider.reader, videoID)
 
-		if err != nil && !client.RetryableError(err) {
-			return retry.MarkAsNotRetryable(err)
-		}
-
 		return err
 	})
 
@@ -50,10 +46,6 @@ func (provider *metadataClient) Playlist(operationContext context.Context, playl
 		var err error
 
 		result, err = getPlaylistInfoWithReader(attemptContext, provider.reader, playlistID)
-
-		if err != nil && !client.RetryableError(err) {
-			return retry.MarkAsNotRetryable(err)
-		}
 
 		return err
 	})

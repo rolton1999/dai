@@ -3,6 +3,7 @@ package hls
 import (
 	"context"
 	"dai/internal/http/client"
+	"dai/internal/retry"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,7 +17,6 @@ const (
 	segmentDownloadTimeout  = 2 * time.Minute
 	segmentRetryDelay       = 250 * time.Millisecond
 	segmentDownloadError    = "cannot download segment %d after %d attempts: %w"
-	segmentStatusError      = "HTTP %d"
 	segmentCreateError      = "cannot create segment file: %w"
 	segmentWriteError       = "cannot write segment: %w"
 	segmentCloseError       = "cannot close segment: %w"
@@ -34,7 +34,7 @@ func downloadSegment(
 		}
 
 		attemptContext, cancel := context.WithTimeout(operationContext, segmentAttemptTimeout)
-		retry, err := downloadSegmentAttempt(attemptContext, httpClient, meta)
+		shouldRetry, err := downloadSegmentAttempt(attemptContext, httpClient, meta)
 
 		cancel()
 
@@ -42,7 +42,7 @@ func downloadSegment(
 			return nil
 		}
 
-		if !retry || attempt+1 == segmentDownloadAttempts {
+		if !shouldRetry || attempt+1 == segmentDownloadAttempts {
 			return fmt.Errorf(segmentDownloadError, meta.index+1, attempt+1, err)
 		}
 
@@ -62,7 +62,7 @@ func downloadSegmentAttempt(operationContext context.Context, httpClient client.
 
 	response, err := httpClient.Do(request)
 	if err != nil {
-		return client.RetryableError(err), err
+		return retry.IsRetryable(err), err
 	}
 
 	defer func() {
@@ -70,9 +70,9 @@ func downloadSegmentAttempt(operationContext context.Context, httpClient client.
 	}()
 
 	if response.StatusCode != http.StatusOK {
-		retry := client.RetryableStatus(response.StatusCode)
+		statusError := &client.StatusError{Code: response.StatusCode}
 
-		return retry, fmt.Errorf(segmentStatusError, response.StatusCode)
+		return retry.IsRetryable(statusError), statusError
 	}
 
 	file, err := os.Create(meta.fileName)
@@ -89,7 +89,7 @@ func downloadSegmentAttempt(operationContext context.Context, httpClient client.
 
 	if copyErr != nil {
 		_ = os.Remove(meta.fileName)
-		return client.RetryableError(copyErr), fmt.Errorf(segmentWriteError, copyErr)
+		return retry.IsRetryable(copyErr), fmt.Errorf(segmentWriteError, copyErr)
 	}
 
 	if closeErr != nil {

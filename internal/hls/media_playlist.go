@@ -63,10 +63,6 @@ func collectSegmentMetas(playlist VariantPlaylist, directoryName, resultName str
 
 		result, operationError = collectSegmentMetasOnce(attemptContext, reader, playlist, directoryName, resultName)
 
-		if operationError != nil && !client.RetryableError(operationError) {
-			return retry.MarkAsNotRetryable(operationError)
-		}
-
 		return operationError
 	})
 

@@ -29,10 +29,6 @@ func (provider *playlistClient) Variants(operationContext context.Context, link 
 
 		result, err = getVariantPlaylistsWithReader(attemptContext, provider.reader, link)
 
-		if err != nil && !client.RetryableError(err) {
-			return retry.MarkAsNotRetryable(err)
-		}
-
 		return err
 	})
 

@@ -2,7 +2,6 @@ package retry
 
 import (
 	"context"
-	"errors"
 	"time"
 )
 
@@ -26,8 +25,7 @@ func Do(operationContext context.Context, operation func(context.Context) error)
 			return operationContext.Err()
 		}
 
-		var notRetryable *notRetryableError
-		if errors.As(err, &notRetryable) {
+		if !IsRetryable(err) {
 			return err
 		}
 

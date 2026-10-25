@@ -171,9 +171,13 @@ Metadata and HLS requests retry HTTP 408/429/500/502/503/504 and interrupted
 transfers or network failures. Other HTTP statuses, invalid requests, malformed
 JSON, malformed HLS and unsupported HLS features stop immediately. An HTTP
 `url.Error` wrapper is unwrapped before classification, so a permanent underlying
-failure is not mistaken for a transient network error. Shared classification
-lives in `internal/http/client` and is also used by segment transfers.
-`retry.MarkAsNotRetryable` preserves error messages and the wrapped error chain. Metadata and
+failure is not mistaken for a transient network error. `retry.IsRetryable` is the
+single classification function used by the retry loop and segment transfers.
+HTTP status errors implement `Retryable()` in `internal/http/client`, keeping
+HTTP status rules with their owner. The retry loop respects that decision through
+a small private error interface. Unclassified errors stop immediately;
+`retry.MarkAsNotRetryable` explicitly prevents retries even when its wrapped cause
+would otherwise be transient. Both preserve the original error chain. Metadata and
 playlist operations retain three attempts with 1 s / 2 s backoff and their
 existing two-minute deadlines; segment budgets and backoff are unchanged.
 
@@ -186,8 +190,8 @@ counts and virtual elapsed time. Shared policy fixtures cover all retryable
 statuses, permanent statuses, wrapped transfer errors, cancellation and local
 file errors. No test adds `time.Sleep`, live Rutube requests or FFmpeg execution.
 Required-field validation, request/body limits and client cleanup from the merged
-metadata branch are preserved. Retry classification runs at the injected metadata
-and HLS operation boundaries.
+metadata branch are preserved. Rutube and HLS callers return operation errors
+directly; they no longer classify and wrap the same errors before the retry loop.
 
 Verification: build, pinned lint and the full race-enabled suite pass. A second
 lint check requires no fixes. Fifty race-enabled repetitions of retry, HTTP policy,

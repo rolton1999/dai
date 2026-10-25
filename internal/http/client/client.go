@@ -117,3 +117,14 @@ type StatusError struct {
 func (status *StatusError) Error() string {
 	return fmt.Sprintf(statusErrorFormat, status.Code)
 }
+
+func (status *StatusError) Retryable() bool {
+	switch status.Code {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests,
+		http.StatusInternalServerError, http.StatusBadGateway,
+		http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
