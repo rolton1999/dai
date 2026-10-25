@@ -2,10 +2,11 @@ package cli
 
 import (
 	"context"
-	"dai/internal/download"
 	"errors"
 	"flag"
 	"io"
+
+	"dai/internal/download"
 )
 
 const (
