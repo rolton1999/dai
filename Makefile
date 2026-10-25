@@ -1,6 +1,7 @@
 GO ?= go
 GOLANGCI_LINT_VERSION := v2.15.0
 GOLANGCI_LINT_PACKAGE := github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+LINT_FIX ?= true
 LINT_FLAGS ?= --build-tags=integration ./...
 TEST_FLAGS ?= -race -count=1
 
@@ -11,7 +12,7 @@ build:
 	$(GO) build -o ./bin/dai ./cmd/dai
 
 lint:
-	$(GO) run $(GOLANGCI_LINT_PACKAGE)@$(GOLANGCI_LINT_VERSION) run --fix $(LINT_FLAGS)
+	$(GO) run $(GOLANGCI_LINT_PACKAGE)@$(GOLANGCI_LINT_VERSION) run --fix=$(LINT_FIX) $(LINT_FLAGS)
 
 test:
 	$(GO) test $(TEST_FLAGS) ./...
