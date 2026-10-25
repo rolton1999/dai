@@ -4,7 +4,7 @@ GOLANGCI_LINT_PACKAGE := github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 LINT_FLAGS ?= --build-tags=integration ./...
 TEST_FLAGS ?= -race -count=1
 
-.PHONY: build clean lint test test-integration e2e e2e-single e2e-playlist test-small test-big
+.PHONY: build clean lint test test-integration test-all e2e e2e-single e2e-playlist test-small test-big
 
 build:
 	mkdir -p bin
@@ -18,6 +18,11 @@ test:
 
 test-integration:
 	$(GO) test $(TEST_FLAGS) -tags=integration -timeout=60s ./...
+
+test-all:
+	$(MAKE) test
+	$(MAKE) test-integration
+	$(MAKE) e2e
 
 e2e: e2e-single e2e-playlist
 

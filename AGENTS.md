@@ -31,9 +31,8 @@ catch-all contracts package.
 
 At the repository root, `Makefile` owns build, pinned lint, and test commands;
 `.golangci.yml` defines lint and formatting rules; `.github/workflows/lint.yml`
-runs checks in CI; and `bugs.md` records known defects and their test plan.
-The package table describes responsibilities; unresolved ownership defects remain
-tracked in `bugs.md` until implementation and tests are complete.
+runs checks in CI. `README.md` describes test coverage and live-service verification
+limits. The package table describes responsibilities.
 
 ## Go API and file organization
 
@@ -192,5 +191,5 @@ make test
   conversion as successful output.
 - Preserve existing user files. Cleanup must affect only artifacts owned by the
   operation; live smoke tests must not delete unrelated files.
-- Document tested scenarios and unresolved gaps in `bugs.md`. Local HTTP fixtures
-  and process doubles do not prove compatibility with the live Rutube service.
+- Document tested scenarios and unresolved verification gaps in `README.md`. Local
+  HTTP fixtures and process doubles do not prove compatibility with live Rutube.

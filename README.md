@@ -36,13 +36,27 @@ segments and conversion have bounded deadlines; Ctrl-C cancels active work.
 make lint
 make test
 make test-integration
+make test-all
 ```
+
+`make test-all` runs unit, integration, then both live E2E tests, stopping on the
+first failure. It requires network access, FFmpeg/FFprobe and `shasum`.
 
 The integration tests generate local media and use FFmpeg/FFprobe without
 accessing Rutube. Ordinary tests use process doubles and need neither executable.
 Live checksum tests are opt-in: `make e2e-single` and `make e2e-playlist` use
 temporary directories. See [tests/e2e/README.md](tests/e2e/README.md) for reference
-checksums and [bugs.md](bugs.md) for verification coverage.
+checksums.
+
+The integration suite covers local HTTP metadata, master/media playlist redirects,
+segment downloading, real FFmpeg conversion and FFprobe output validation. It also
+checks quoted segment paths, colon/leading-hyphen output names, failure reporting
+and cleanup. CI runs this suite with FFmpeg installed. Ordinary race-enabled tests
+cover parsing, retry policy, cancellation, worker shutdown, output collisions,
+concurrent publication and resource ownership; both HLS parsers have fuzz targets.
+
+Local fixtures do not establish compatibility with the live Rutube service. The
+live checksum tests have not been rerun on the assembled fixes.
 
 `make lint` also checks integration-tagged sources and applies fixes. CI rejects
 tracked source changes produced by lint. `make clean` removes only `bin/dai`.
