@@ -1,6 +1,7 @@
 package hls
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -63,7 +64,7 @@ func TestPlaylistRetryPolicy(test *testing.T) {
 						_, err = GetVariantPlaylists(masterFixtureURL)
 					} else {
 						playlist := VariantPlaylist{Link: masterFixtureURL}
-						_, err = collectSegmentMetas(playlist, "", "")
+						_, err = collectSegmentMetas(context.Background(), playlist, "", "")
 					}
 
 					if err == nil || attempts != fixture.attempts || time.Since(started) != fixture.elapsed {

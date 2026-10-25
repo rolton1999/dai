@@ -206,14 +206,14 @@ Live-service compatibility was not rerun for this policy change.
   attempts, exponential backoff, and per-attempt and per-segment deadlines.
 - [x] Remove partial segment files between attempts and remove the operation's
   temporary directory when a download fails.
-- [ ] Propagate producer and processor errors to the caller instead of discarding
+- [x] Propagate producer and processor errors to the caller instead of discarding
   them or requiring errors to be embedded in result values.
-- [ ] Cancel outstanding work after a failure and wait for workers to finish
+- [x] Cancel outstanding work after a failure and wait for workers to finish
   before returning.
-- [ ] Preserve segment ordering despite concurrent completion.
-- [ ] Give one download operation ownership of its temporary directory and remove
+- [x] Preserve segment ordering despite concurrent completion.
+- [x] Give one download operation ownership of its temporary directory and remove
   the directory and its contents on every exit path.
-- [ ] Update progress after recording each completed segment so it reaches 100%.
+- [x] Update progress after recording each completed segment so it reaches 100%.
 
 Tests:
 
@@ -223,6 +223,66 @@ Tests:
 - Verify all workers exit and cleanup happens only after they stop writing.
 - Verify progress reaches 100%, including a one-segment download.
 - Run concurrency tests with race detection.
+
+Pipeline error propagation and cancellation extracted from
+`codex/fix-all-known-bugs` (`a024eae`) onto
+`codex/fix-pipeline-errors-and-cancellation`, based on `master` at `15005d0`.
+The extraction preserves the newer HTTP client ownership, retry classification,
+and deterministic backoff tests already merged into master.
+
+`Pipeline.Run` and stage callbacks receive context explicitly. The first producer,
+processor or finalizer error cancels the pipeline and is returned without being
+replaced by sibling cancellation errors. Run joins all workers and channel-closing
+goroutines before returning. Finalizers share the last stage's channel, preserving
+work distribution rather than broadcasting each item. Invalid stage types and
+missing producers/finalizers return errors instead of panicking.
+
+HLS segment requests inherit the pipeline context and retain their existing
+per-segment and per-attempt limits. A failed segment cancels sibling requests;
+failed-download cleanup runs only after they finish. Segment errors no longer
+travel inside result values or through a shared error pointer. Callbacks must
+honor cancellation; the pipeline cannot forcibly stop a callback that ignores its
+context. CLI-wide cancellation and output safety remain separate work.
+
+Regression tests cover producer/processor/finalizer failures, caller cancellation,
+pre-canceled runs, incompatible types, missing stages, multiple producers and
+finalizers delivering each item once, and worker completion before Run returns.
+A public HLS regression uses virtual time to stall one request while another
+returns HTTP 404; it verifies prompt cancellation, preservation of the original
+HTTP error, request completion, and removal of temporary artifacts.
+
+Verification: `make build`, pinned `make lint`, and `make test` pass. One hundred
+race-enabled repetitions of both pipeline and HLS tests pass. Live Rutube and
+FFmpeg smoke tests were not rerun for this pipeline-only extraction.
+
+Section 4 is complete on the same branch. HLS returns an owned artifact rather
+than a bare slice of paths. Failed downloads remove their directory after joining
+workers; successful downloads transfer cleanup responsibility to the download
+operation, which defers artifact closure until conversion returns. Cleanup removes
+the entire directory, including any additional temporary files, and reports
+cleanup errors without discarding the original operation error. FFmpeg now leaves
+caller-owned segment inputs intact. Artifact file lists are copied on access.
+Temporary segment names use an internal prefix rather than the video title;
+user-visible MP4 filenames are unchanged.
+
+The HLS download API accepts context explicitly and passes it through media
+playlist retries and segment downloads. Completed segments are recorded by their
+playlist index, and progress increments after recording each file, reaching 100%
+for both one-segment and multi-segment downloads.
+
+New deterministic tests force reverse completion order, verify exact progress,
+cancel a live request, and hold a partially written segment open during a sibling
+failure. They verify that cleanup waits for writing and body closure, removes only
+the operation's directory, and preserves unrelated files. Orchestration tests use
+local HTTP transports and a conversion double to verify cleanup after success or
+conversion failure, and that metadata, playlist, and segment failures never start
+conversion. Real FFmpeg integration tests also verify that conversion leaves its
+input files intact on both success and failure.
+
+Verification: build, pinned lint, the full race-enabled suite, 100 repetitions of
+pipeline/HLS/download tests with race detection, and local FFmpeg integration tests
+pass. Live Rutube checks were not run. Unique concat manifests, output naming and
+publication safety remain in section 5.
 
 ## 5. Make output naming and FFmpeg conversion safe
 
@@ -304,7 +364,7 @@ checklists above):
 | Priority | Rule and finding | Location | Required verification |
 | --- | --- | --- | --- |
 | P1 | Goroutine ownership and bounded waits: the spinner outlives failed conversion; HTTP and FFmpeg operations lack cancellation and deadlines. Pipeline stop signals cannot interrupt callbacks or blocked HTTP reads. | `internal/progress/spinner.go`, `internal/ffmpeg/concat.go`, `internal/hls/download.go`, `internal/pipeline` | Stall HTTP reads and process execution, cancel with a deadline, and verify workers and progress reporting stop before the operation returns. |
-| P1 | Output ownership: titles control output paths, concat manifests are shared across operations, and successful conversion leaves its temporary directory behind. Failed segment downloads now clean up their operation directory. | `internal/download/download.go`, `internal/ffmpeg/concat.go`, `internal/hls/download.go` | Isolate concurrent downloads; exercise invalid titles, existing destinations, partial downloads, and conversion failures; verify unrelated files survive. |
+| P1 | Output ownership: titles control output paths, concat manifests are shared across operations, and temporary-directory ownership is now completed in section 4. Output naming and shared concat manifests remain section 5 work. | `internal/download/download.go`, `internal/ffmpeg/concat.go`, `internal/hls/download.go` | Isolate concurrent downloads; exercise invalid titles, existing destinations, partial downloads, and conversion failures; verify unrelated files survive. |
 | P1 | Explicit failure contracts: pipeline callbacks discard errors; malformed HLS can panic; metadata HTTP failures can be accepted as success. | `internal/pipeline/produce_stage.go`, `internal/pipeline/process_stage.go`, `internal/hls`, `internal/rutube` | Public operation tests must observe the original failure and must not start conversion or report success. Add parser fuzz tests. |
 | P2 | Small behavior interfaces: provider requests and FFmpeg execution are package-level calls bound to default clients and executables, making isolated orchestration tests difficult. | `internal/rutube`, `internal/ffmpeg`, `internal/download` | Introduce minimal owner-defined interfaces and constructors that validate and allocate without starting I/O; test orchestration through injected HTTP and conversion behavior. |
 | P2 | Bounded input: response bodies are read with unbounded `io.ReadAll`, and pagination has no repeated-page detection or operation deadline. An oversized response can exhaust memory; repeated `next` values can loop indefinitely. | `internal/hls/playlist.go`, `internal/hls/media_playlist.go`, `internal/rutube/playlist_info.go`, `internal/rutube/video_info.go` | Add explicit metadata/playlist size limits and pagination safeguards; test oversized bodies and cyclic pagination with bounded completion. |

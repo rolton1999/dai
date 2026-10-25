@@ -1,13 +1,22 @@
 package pipeline
 
-import "sync"
+import (
+	"context"
+	"errors"
+	"sync"
+)
 
+const (
+	pipelineRequiresProducerAndFinalizerMessage = "pipeline requires producer and finalizer"
+)
+
+// Callbacks must honor their context. Run cancels on the first failure and joins
+// every worker before returning, so callers can safely release owned resources.
 type Pipeline interface {
 	AppendProducer(ProduceStage)
 	AppendMedium(ProcessStage)
 	AppendFinalizer(FinalizeStage)
-
-	Run()
+	Run(context.Context) error
 }
 
 func NewPipeline() Pipeline {
@@ -32,74 +41,73 @@ func (pipeline *pipelineImpl) AppendFinalizer(stage FinalizeStage) {
 	pipeline.finalizers = append(pipeline.finalizers, stage)
 }
 
-func (pipeline *pipelineImpl) Run() {
-	if len(pipeline.producers) == 0 {
-		panic("cannot do pipeline without any producers")
+func (pipeline *pipelineImpl) Run(operationContext context.Context) error {
+	if len(pipeline.producers) == 0 || len(pipeline.finalizers) == 0 {
+		return errors.New(pipelineRequiresProducerAndFinalizerMessage)
 	}
 
-	if len(pipeline.finalizers) == 0 {
-		panic("cannot do pipeline without any finalizers")
+	operationContext, cancel := context.WithCancelCause(operationContext)
+	defer cancel(nil)
+
+	report := func(err error) {
+		if err != nil {
+			cancel(err)
+		}
 	}
 
-	stopChannel := make(chan struct{})
+	var workers sync.WaitGroup
 
-	producerChannels := make([]<-chan any, len(pipeline.producers))
-	for stageIndex := range pipeline.producers {
-		producerChannels[stageIndex] = pipeline.producers[stageIndex].run(stopChannel)
+	channels := make([]<-chan any, 0, len(pipeline.producers))
+	for _, producer := range pipeline.producers {
+		channels = append(channels, producer.run(operationContext, report, &workers))
 	}
 
-	inputChannel := fanIn(producerChannels...)
-	for stageIndex := range pipeline.mediums {
-		inputChannel = pipeline.mediums[stageIndex].run(inputChannel, stopChannel)
+	input := fanIn(operationContext, channels, &workers)
+	for _, processor := range pipeline.mediums {
+		input = processor.run(operationContext, input, report, &workers)
 	}
 
-	finalizerInputs := fanOut(inputChannel, len(pipeline.finalizers))
-
-	finalizerCompletionChannels := make([]<-chan any, len(pipeline.finalizers))
-	for stageIndex := range pipeline.finalizers {
-		finalizerCompletionChannels[stageIndex] = pipeline.finalizers[stageIndex].run(finalizerInputs[stageIndex], stopChannel)
+	for _, finalizer := range pipeline.finalizers {
+		finalizer.run(operationContext, input, report, &workers)
 	}
 
-	<-fanIn(finalizerCompletionChannels...)
+	workers.Wait()
 
-	close(stopChannel)
+	return context.Cause(operationContext)
 }
 
-func fanIn(inputChannels ...<-chan any) <-chan any {
-	outputChannel := make(chan any)
-	workersDone := sync.WaitGroup{}
+func fanIn(operationContext context.Context, inputs []<-chan any, workers *sync.WaitGroup) <-chan any {
+	output := make(chan any)
 
-	for _, inputChannel := range inputChannels {
-		workersDone.Go(func() {
-			for value := range inputChannel {
-				outputChannel <- value
+	var forwarders sync.WaitGroup
+	for _, input := range inputs {
+		forwarders.Add(1)
+		workers.Go(func() {
+			defer forwarders.Done()
+
+			for {
+				select {
+				case <-operationContext.Done():
+					return
+				case value, open := <-input:
+					if !open {
+						return
+					}
+
+					select {
+					case output <- value:
+					case <-operationContext.Done():
+						return
+					}
+				}
 			}
 		})
 	}
 
-	go func() {
-		workersDone.Wait()
-		close(outputChannel)
-	}()
+	workers.Go(func() {
+		forwarders.Wait()
+		close(output)
+	})
 
-	return outputChannel
-}
-
-func fanOut(inputChannel <-chan any, finalizerCount int) []chan any {
-	outputChannels := make([]chan any, finalizerCount)
-	for stageIndex := range outputChannels {
-		outputChannels[stageIndex] = make(chan any)
-	}
-
-	for stageIndex := range finalizerCount {
-		go func() {
-			defer close(outputChannels[stageIndex])
-
-			for value := range inputChannel {
-				outputChannels[stageIndex] <- value
-			}
-		}()
-	}
-
-	return outputChannels
+	return output
 }

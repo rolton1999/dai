@@ -1,6 +1,9 @@
 package hls_test
 
 import (
+	"context"
+	"dai/internal/http/client"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -8,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"dai/internal/hls"
 )
@@ -19,7 +23,6 @@ const (
 	fixtureSecondSegmentPath     = "/media/segment-2.ts"
 	fixtureFirstSegmentBody      = "first segment"
 	fixtureSecondSegmentBody     = "second segment"
-	fixtureOutputName            = "video.mp4"
 	fixtureTemporaryDirectoryKey = "TMPDIR"
 	fixtureMediaPlaylist         = "#EXTM3U\n#EXT-X-TARGETDURATION:7\n#EXT-X-ALLOW-CACHE:YES\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:3.937,\nsegment-1.ts\n#EXTINF:3.937,\nsegment-2.ts\n#EXT-X-ENDLIST\n"
 	fixtureMinimalPlaylist       = "#EXTM3U\n#EXTINF:3.937,\nsegment-1.ts\n#EXTINF:3.937,\nsegment-2.ts\n#EXT-X-ENDLIST\n"
@@ -65,20 +68,26 @@ func TestDownloadTSFilesRequestsOnlySegments(test *testing.T) {
 		test.Run(fixture.name, func(test *testing.T) {
 			unexpectedRequests := setFixtureClient(test, fixture.playlist, http.StatusOK)
 
-			files, err := hls.DownloadTSFiles(silentLogger{}, fixtureOutputName, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
+			artifact, err := hls.DownloadTSFiles(context.Background(), silentLogger{}, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
 			if err != nil {
 				test.Fatalf("download failed: %v", err)
 			}
+
+			test.Cleanup(func() {
+				if err := artifact.Close(); err != nil {
+					test.Error(err)
+				}
+			})
 
 			expectedBodies := []string{
 				fixtureFirstSegmentBody,
 				fixtureSecondSegmentBody,
 			}
-			if len(files) != len(expectedBodies) {
-				test.Fatalf("expected %d segments, got %d", len(expectedBodies), len(files))
+			if len(artifact.Files()) != len(expectedBodies) {
+				test.Fatalf("expected %d segments, got %d", len(expectedBodies), len(artifact.Files()))
 			}
 
-			for segmentIndex, fileName := range files {
+			for segmentIndex, fileName := range artifact.Files() {
 				body, err := os.ReadFile(fileName)
 				if err != nil {
 					test.Fatal(err)
@@ -100,9 +109,9 @@ func TestDownloadTSFilesRejectsRealSegmentFailure(test *testing.T) {
 	synctest.Test(test, func(test *testing.T) {
 		setFixtureClient(test, fixtureMediaPlaylist, http.StatusBadGateway)
 
-		files, err := hls.DownloadTSFiles(silentLogger{}, fixtureOutputName, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
-		if err == nil || files != nil {
-			test.Fatalf("expected a failed segment to abort download, got files %v and error %v", files, err)
+		artifact, err := hls.DownloadTSFiles(context.Background(), silentLogger{}, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
+		if err == nil || artifact != nil {
+			test.Fatalf("expected a failed segment to abort download, got files %v and error %v", artifact, err)
 		}
 
 		artifacts, err := os.ReadDir(os.Getenv(fixtureTemporaryDirectoryKey))
@@ -138,20 +147,26 @@ func TestDownloadTSFilesRecoversInterruptedSegment(test *testing.T) {
 			return transport.RoundTrip(request)
 		})
 
-		files, err := hls.DownloadTSFiles(silentLogger{}, fixtureOutputName, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
+		artifact, err := hls.DownloadTSFiles(context.Background(), silentLogger{}, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
 		if err != nil {
 			test.Fatal(err)
 		}
+
+		test.Cleanup(func() {
+			if err := artifact.Close(); err != nil {
+				test.Error(err)
+			}
+		})
 
 		expectedBodies := []string{
 			fixtureFirstSegmentBody,
 			fixtureSecondSegmentBody,
 		}
-		if len(files) != len(expectedBodies) {
-			test.Fatalf("expected %d complete segments, got %d", len(expectedBodies), len(files))
+		if len(artifact.Files()) != len(expectedBodies) {
+			test.Fatalf("expected %d complete segments, got %d", len(expectedBodies), len(artifact.Files()))
 		}
 
-		for segmentIndex, fileName := range files {
+		for segmentIndex, fileName := range artifact.Files() {
 			body, err := os.ReadFile(fileName)
 			if err != nil || string(body) != expectedBodies[segmentIndex] {
 				test.Fatalf("segment %d retained partial data: %q, error %v", segmentIndex, body, err)
@@ -179,9 +194,9 @@ func TestDownloadTSFilesRejectsMalformedPlaylist(test *testing.T) {
 		test.Run(playlist, func(test *testing.T) {
 			setFixtureClient(test, playlist, http.StatusOK)
 
-			files, err := hls.DownloadTSFiles(silentLogger{}, fixtureOutputName, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
-			if err == nil || files != nil {
-				test.Fatalf("expected an invalid playlist error, got files %v and error %v", files, err)
+			artifact, err := hls.DownloadTSFiles(context.Background(), silentLogger{}, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
+			if err == nil || artifact != nil {
+				test.Fatalf("expected an invalid playlist error, got files %v and error %v", artifact, err)
 			}
 		})
 	}
@@ -256,13 +271,77 @@ func TestDownloadTSFilesRejectsEncryptionBeforeSegmentRequests(test *testing.T) 
 		return originalTransport.RoundTrip(request)
 	})
 
-	files, err := hls.DownloadTSFiles(silentLogger{}, fixtureOutputName, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
-	if err == nil || files != nil || segmentRequests.Load() != 0 {
-		test.Fatalf("files=%v error=%v segment requests=%d", files, err, segmentRequests.Load())
+	artifact, err := hls.DownloadTSFiles(context.Background(), silentLogger{}, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
+	if err == nil || artifact != nil || segmentRequests.Load() != 0 {
+		test.Fatalf("files=%v error=%v segment requests=%d", artifact, err, segmentRequests.Load())
 	}
 
 	artifacts, err := os.ReadDir(os.Getenv(fixtureTemporaryDirectoryKey))
 	if err != nil || len(artifacts) != 0 {
 		test.Fatalf("temporary artifacts=%v error=%v", artifacts, err)
 	}
+}
+
+func TestDownloadFailureCancelsAndJoinsSiblingRequest(test *testing.T) {
+	const (
+		cancellationFailureFormat = "files=%v error=%v elapsed=%s"
+		siblingRunningMessage     = "sibling request still running after download returned"
+		cleanupFailureFormat      = "temporary artifacts=%v error=%v"
+	)
+
+	synctest.Test(test, func(test *testing.T) {
+		setFixtureClient(test, fixtureMinimalPlaylist, http.StatusOK)
+
+		originalTransport := http.DefaultClient.Transport
+		siblingStarted := make(chan struct{})
+		siblingStopped := make(chan struct{})
+		http.DefaultClient.Transport = fixtureTransport(func(request *http.Request) (*http.Response, error) {
+			switch request.URL.Path {
+			case fixtureFirstSegmentPath:
+				select {
+				case <-siblingStarted:
+				case <-request.Context().Done():
+					return nil, request.Context().Err()
+				}
+
+				bodyReader := strings.NewReader("")
+				responseBody := io.NopCloser(bodyReader)
+				response := &http.Response{
+					StatusCode: http.StatusNotFound,
+					Body:       responseBody,
+					Request:    request,
+				}
+
+				return response, nil
+			case fixtureSecondSegmentPath:
+				close(siblingStarted)
+				defer close(siblingStopped)
+
+				<-request.Context().Done()
+
+				return nil, request.Context().Err()
+			default:
+				return originalTransport.RoundTrip(request)
+			}
+		})
+
+		started := time.Now()
+		artifact, err := hls.DownloadTSFiles(context.Background(), silentLogger{}, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
+
+		var statusError *client.StatusError
+		if artifact != nil || !errors.As(err, &statusError) || statusError.Code != http.StatusNotFound || errors.Is(err, context.Canceled) || time.Since(started) != 0 {
+			test.Fatalf(cancellationFailureFormat, artifact, err, time.Since(started))
+		}
+
+		select {
+		case <-siblingStopped:
+		default:
+			test.Fatal(siblingRunningMessage)
+		}
+
+		artifacts, err := os.ReadDir(os.Getenv(fixtureTemporaryDirectoryKey))
+		if err != nil || len(artifacts) != 0 {
+			test.Fatalf(cleanupFailureFormat, artifacts, err)
+		}
+	})
 }

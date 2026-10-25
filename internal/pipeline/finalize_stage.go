@@ -1,40 +1,65 @@
 package pipeline
 
-type FinalizeFunc[TInput any] = func(TInput)
+import (
+	"context"
+	"errors"
+	"sync"
+)
+
+const (
+	pipelineFinalizerTypeMismatchMessage = "pipeline finalizer type mismatch"
+)
+
+type FinalizeFunc[TInput any] = func(context.Context, TInput) error
 
 type FinalizeStage interface {
-	run(inputChannel <-chan any, stopChannel chan struct{}) <-chan any
+	run(
+		context.Context,
+		<-chan any,
+		func(error),
+		*sync.WaitGroup,
+	)
+}
+
+func NewFinalizeStage[TInput any](finalize FinalizeFunc[TInput]) FinalizeStage {
+	return &finalizeStageImpl[TInput]{finalize: finalize}
 }
 
 type finalizeStageImpl[TInput any] struct {
 	finalize FinalizeFunc[TInput]
 }
 
-func NewFinalizeStage[TInput any](finalize FinalizeFunc[TInput]) FinalizeStage {
-	return &finalizeStageImpl[TInput]{
-		finalize: finalize,
-	}
-}
-
-func (finalizer *finalizeStageImpl[TInput]) run(inputChannel <-chan any, stopChannel chan struct{}) <-chan any {
-	outputChannel := make(chan any)
-	go func() {
-		defer close(outputChannel)
-
+func (finalizer *finalizeStageImpl[TInput]) run(
+	operationContext context.Context,
+	input <-chan any,
+	report func(error),
+	workers *sync.WaitGroup,
+) {
+	workers.Go(func() {
 		for {
 			select {
-			case <-stopChannel:
+			case <-operationContext.Done():
 				return
-			case inputValue, open := <-inputChannel:
+			case value, open := <-input:
 				if !open {
 					return
 				}
 
-				input := inputValue.(TInput)
-				finalizer.finalize(input)
+				if operationContext.Err() != nil {
+					return
+				}
+
+				typed, valid := value.(TInput)
+				if !valid {
+					report(errors.New(pipelineFinalizerTypeMismatchMessage))
+					return
+				}
+
+				if err := finalizer.finalize(operationContext, typed); err != nil {
+					report(err)
+					return
+				}
 			}
 		}
-	}()
-
-	return outputChannel
+	})
 }

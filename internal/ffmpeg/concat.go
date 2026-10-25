@@ -15,12 +15,6 @@ const (
 )
 
 func ConcatTSToResult(logger progress.Logger, tsFiles []string, resultName string) error {
-	defer func() {
-		for _, tsFile := range tsFiles {
-			_ = os.RemoveAll(tsFile)
-		}
-	}()
-
 	resultPath, err := filepath.Abs(resultName)
 	if err != nil {
 		return fmt.Errorf(outputPathError, err)

@@ -47,13 +47,18 @@ const (
 	mediaPlaylistEmptyError      = "media playlist has no segments"
 )
 
-func collectSegmentMetas(playlist VariantPlaylist, directoryName, resultName string) ([]segmentMeta, error) {
+func collectSegmentMetas(
+	operationContext context.Context,
+	playlist VariantPlaylist,
+	directoryName string,
+	resultName string,
+) ([]segmentMeta, error) {
 	httpClient := client.NewStreamingClient(nil)
 	defer httpClient.Close()
 
 	reader := client.New(httpClient)
 
-	operationContext, cancel := context.WithTimeout(context.Background(), playlistRequestTimeout)
+	operationContext, cancel := context.WithTimeout(operationContext, playlistRequestTimeout)
 	defer cancel()
 
 	var result []segmentMeta

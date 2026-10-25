@@ -1,6 +1,7 @@
 package hls_test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -72,9 +73,17 @@ func TestMediaPlaylistRetriesInterruptedBody(test *testing.T) {
 			return transport.RoundTrip(request)
 		})
 
-		files, err := hls.DownloadTSFiles(silentLogger{}, fixtureOutputName, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
-		if err != nil || attempts != 2 || len(files) == 0 {
-			test.Fatalf("files=%v attempts=%d error=%v", files, attempts, err)
+		artifact, err := hls.DownloadTSFiles(context.Background(), silentLogger{}, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
+		if artifact != nil {
+			test.Cleanup(func() {
+				if err := artifact.Close(); err != nil {
+					test.Error(err)
+				}
+			})
+		}
+
+		if err != nil || attempts != 2 || len(artifact.Files()) == 0 {
+			test.Fatalf("files=%v attempts=%d error=%v", artifact, attempts, err)
 		}
 	})
 }
