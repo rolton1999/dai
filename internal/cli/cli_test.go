@@ -69,3 +69,60 @@ func TestRunDispatchesOptions(test *testing.T) {
 		test.Fatalf(cliTestBadDispatch, service)
 	}
 }
+
+const (
+	cliJobsFlag            = "--jobs"
+	cliJobsSingle          = "1"
+	cliJobsInvalid         = "invalid"
+	cliJobsZero            = "0"
+	cliJobsNegative        = "-1"
+	cliPlaylistURL         = "https://rutube.ru/plst/1840659/"
+	cliJobsUnexpected      = "jobs=%d, expected=%d; dispatch=%v"
+	cliJobsAcceptedInvalid = "accepted invalid jobs value %q or dispatched a download"
+)
+
+func TestPlaylistJobsOption(test *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		test.Run(map[bool]string{false: "default", true: "explicit"}[explicit], func(test *testing.T) {
+			service := &fixtureService{}
+
+			command, err := New(service)
+			if err != nil {
+				test.Fatal(err)
+			}
+
+			arguments := []string{cliPlaylistURL}
+			expected := download.DefaultJobs
+
+			if explicit {
+				arguments = []string{cliJobsFlag, cliJobsSingle, cliPlaylistURL}
+				expected = 1
+			}
+
+			if err := command.Run(test.Context(), arguments); err != nil {
+				test.Fatal(err)
+			}
+
+			if service.kind != playlist || service.options.Jobs != expected {
+				test.Fatalf(cliJobsUnexpected, service.options.Jobs, expected, service.kind)
+			}
+		})
+	}
+}
+
+func TestInvalidJobsNeverDispatches(test *testing.T) {
+	for _, value := range []string{cliJobsZero, cliJobsNegative, cliJobsInvalid} {
+		test.Run(value, func(test *testing.T) {
+			service := &fixtureService{}
+
+			command, err := New(service)
+			if err != nil {
+				test.Fatal(err)
+			}
+
+			if err := command.Run(test.Context(), []string{cliJobsFlag, value, cliPlaylistURL}); err == nil || service.kind != notExpected {
+				test.Fatalf(cliJobsAcceptedInvalid, value)
+			}
+		})
+	}
+}
