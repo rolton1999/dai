@@ -18,7 +18,7 @@ func TestPipelineProcessesEveryItem(test *testing.T) {
 
 	nextItem := 0
 	processedItems := make(map[int]int)
-	downloadPipeline := pipeline.NewPipeline()
+	downloadPipeline := pipeline.NewPipeline[int]()
 	producer := pipeline.NewProduceStage(func(context.Context) (int, error, bool) {
 		if nextItem == stageItemCount {
 			return 0, nil, true

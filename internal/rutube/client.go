@@ -4,19 +4,22 @@ import (
 	"context"
 	"dai/internal/http/client"
 	"dai/internal/retry"
+	"errors"
 )
+
+const missingMetadataReaderMessage = "metadata HTTP reader is required"
 
 type Client interface {
 	Video(context.Context, string) (VideoInfo, error)
 	Playlist(context.Context, string) (PlaylistInfo, error)
 }
 
-func New(reader client.Client) Client {
-	return newMetadataProvider(reader)
-}
+func New(reader client.Client) (Client, error) {
+	if reader == nil {
+		return nil, errors.New(missingMetadataReaderMessage)
+	}
 
-func newMetadataProvider(reader client.Client) Client {
-	return &metadataClient{reader: reader}
+	return &metadataClient{reader: reader}, nil
 }
 
 type metadataClient struct {

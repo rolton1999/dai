@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"dai/internal/hls"
+	"dai/internal/http/client"
 	"dai/internal/progress"
 	"dai/internal/rutube"
 )
@@ -55,7 +56,14 @@ type parallelStreams struct {
 
 func (*parallelStreams) Variants(operationContext context.Context, identifier string) ([]hls.VariantPlaylist, error) {
 	reader := &variantFixtureReader{}
-	streams := hls.New(reader, nil)
+
+	network := client.NewStreamingClient(nil)
+	defer network.Close()
+
+	streams, streamsConstructorError := hls.New(reader, network)
+	if streamsConstructorError != nil {
+		return nil, streamsConstructorError
+	}
 
 	variants, err := streams.Variants(operationContext, fixtureMasterURL)
 	if err != nil {

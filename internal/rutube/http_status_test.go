@@ -66,7 +66,11 @@ func TestVideoRejectsHTTPErrorBeforeParsing(test *testing.T) {
 			httpClient := &http.Client{Transport: transport}
 			streamingClient := client.NewStreamingClient(httpClient)
 			test.Cleanup(streamingClient.Close)
-			reader := client.New(streamingClient)
+
+			reader, readerConstructorError := client.New(streamingClient)
+			if readerConstructorError != nil {
+				test.Fatal(readerConstructorError)
+			}
 
 			info, err := getVideoInfoWithReader(context.Background(), reader, retryVideoID)
 			verifyStatusBody(test, status, body, err)
@@ -125,7 +129,11 @@ func TestPlaylistRejectsHTTPErrorAtEveryEndpoint(test *testing.T) {
 					httpClient := &http.Client{Transport: transport}
 					streamingClient := client.NewStreamingClient(httpClient)
 					test.Cleanup(streamingClient.Close)
-					reader := client.New(streamingClient)
+
+					reader, readerConstructorError := client.New(streamingClient)
+					if readerConstructorError != nil {
+						test.Fatal(readerConstructorError)
+					}
 
 					_, err := getPlaylistInfoWithReader(context.Background(), reader, retryPlaylistID)
 
@@ -162,9 +170,16 @@ func TestMissingPlaylistCannotSucceed(test *testing.T) {
 	httpClient := &http.Client{Transport: transport}
 	streamingClient := client.NewStreamingClient(httpClient)
 	test.Cleanup(streamingClient.Close)
-	reader := client.New(streamingClient)
 
-	provider := newMetadataProvider(reader)
+	reader, readerConstructorError := client.New(streamingClient)
+	if readerConstructorError != nil {
+		test.Fatal(readerConstructorError)
+	}
+
+	provider, providerConstructorError := New(reader)
+	if providerConstructorError != nil {
+		test.Fatal(providerConstructorError)
+	}
 
 	_, err := provider.Playlist(context.Background(), retryPlaylistID)
 	if err == nil {
@@ -190,7 +205,11 @@ func TestVideoClosesMalformedSuccessBody(test *testing.T) {
 	httpClient := &http.Client{Transport: transport}
 	streamingClient := client.NewStreamingClient(httpClient)
 	test.Cleanup(streamingClient.Close)
-	reader := client.New(streamingClient)
+
+	reader, readerConstructorError := client.New(streamingClient)
+	if readerConstructorError != nil {
+		test.Fatal(readerConstructorError)
+	}
 
 	_, err := getVideoInfoWithReader(context.Background(), reader, retryVideoID)
 	if err == nil || !body.closed {

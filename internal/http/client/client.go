@@ -19,6 +19,7 @@ const (
 	oversizedBodyError   = "metadata response exceeds size limit"
 	statusErrorFormat    = "HTTP %d"
 	missingResponseError = "HTTP client returned an empty response"
+	missingClientError   = "streaming HTTP client is required"
 )
 
 type Response struct {
@@ -33,8 +34,12 @@ type Client interface {
 	Read(context.Context, string) (Response, error)
 }
 
-func New(httpClient StreamingClient) Client {
-	return &clientImpl{httpClient: httpClient}
+func New(httpClient StreamingClient) (Client, error) {
+	if httpClient == nil {
+		return nil, errors.New(missingClientError)
+	}
+
+	return &clientImpl{httpClient: httpClient}, nil
 }
 
 type clientImpl struct {

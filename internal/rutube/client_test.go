@@ -13,6 +13,26 @@ import (
 	"time"
 )
 
+func TestConstructorRejectsMissingReader(test *testing.T) {
+	const acceptedMessage = "accepted missing metadata reader"
+
+	if provider, err := New(nil); err == nil || provider != nil {
+		test.Fatal(acceptedMessage)
+	}
+}
+
+func TestConvenienceOperationsHonorCallerCancellation(test *testing.T) {
+	operationContext, cancel := context.WithCancel(test.Context())
+	cancel()
+
+	_, videoError := GetVideoInfo(operationContext, retryVideoID)
+
+	_, playlistError := GetPlaylistInfo(operationContext, retryPlaylistID)
+	if !errors.Is(videoError, context.Canceled) || !errors.Is(playlistError, context.Canceled) {
+		test.Fatalf(clientCancellationErrorFormat, errors.Join(videoError, playlistError))
+	}
+}
+
 const (
 	clientTestDeadline            = time.Second
 	clientCanceledMessage         = "injected request failed to cancel"
@@ -104,8 +124,17 @@ func TestInjectedProviderHonorsCancellation(test *testing.T) {
 			httpClient := &http.Client{Transport: transport}
 			streamingClient := client.NewStreamingClient(httpClient)
 			test.Cleanup(streamingClient.Close)
-			reader := client.New(streamingClient)
-			provider := newMetadataProvider(reader)
+
+			reader, readerConstructorError := client.New(streamingClient)
+			if readerConstructorError != nil {
+				test.Fatal(readerConstructorError)
+			}
+
+			provider, providerConstructorError := New(reader)
+			if providerConstructorError != nil {
+				test.Fatal(providerConstructorError)
+			}
+
 			operationContext, cancel := context.WithCancel(context.Background())
 			result := make(chan error, 1)
 
@@ -188,7 +217,11 @@ func TestInjectedPlaylistResolvesRelativeNextAfterRedirect(test *testing.T) {
 	const expectedVideos = 2
 
 	reader := &relativePageReader{}
-	provider := newMetadataProvider(reader)
+
+	provider, providerConstructorError := New(reader)
+	if providerConstructorError != nil {
+		test.Fatal(providerConstructorError)
+	}
 
 	info, err := provider.Playlist(context.Background(), retryPlaylistID)
 	if err != nil || len(info.VideoIDs) != expectedVideos || info.VideoIDs[0] != metadataFirstID {
@@ -241,9 +274,9 @@ func TestMetadataOperationsCloseIdleConnections(test *testing.T) {
 
 			var err error
 			if playlist {
-				_, err = GetPlaylistInfo(retryPlaylistID)
+				_, err = GetPlaylistInfo(context.Background(), retryPlaylistID)
 			} else {
-				_, err = GetVideoInfo(retryVideoID)
+				_, err = GetVideoInfo(context.Background(), retryVideoID)
 			}
 
 			if err != nil {

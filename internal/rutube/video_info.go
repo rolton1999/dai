@@ -34,14 +34,21 @@ func (videoInfo VideoInfo) String() string {
 	return fmt.Sprintf(videoInfoDisplayFormat, videoInfo.Title, videoInfo.MasterPlaylistLink)
 }
 
-func GetVideoInfo(videoID string) (VideoInfo, error) {
+func GetVideoInfo(operationContext context.Context, videoID string) (VideoInfo, error) {
 	httpClient := client.NewStreamingClient(nil)
 	defer httpClient.Close()
 
-	reader := client.New(httpClient)
-	provider := newMetadataProvider(reader)
+	reader, err := client.New(httpClient)
+	if err != nil {
+		return VideoInfo{}, err
+	}
 
-	return provider.Video(context.Background(), videoID)
+	provider, err := New(reader)
+	if err != nil {
+		return VideoInfo{}, err
+	}
+
+	return provider.Video(operationContext, videoID)
 }
 
 func getVideoInfoWithReader(

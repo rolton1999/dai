@@ -56,7 +56,10 @@ func collectSegmentMetas(
 	httpClient := client.NewStreamingClient(nil)
 	defer httpClient.Close()
 
-	reader := client.New(httpClient)
+	reader, err := client.New(httpClient)
+	if err != nil {
+		return nil, err
+	}
 
 	return collectSegmentMetasWithReader(operationContext, reader, playlist, directoryName, resultName)
 }

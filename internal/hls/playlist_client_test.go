@@ -11,6 +11,40 @@ import (
 	"time"
 )
 
+func TestConstructorRejectsMissingDependencies(test *testing.T) {
+	const acceptedMessage = "accepted missing HLS dependency"
+
+	network := client.NewStreamingClient(nil)
+	defer network.Close()
+
+	reader, err := client.New(network)
+	if err != nil {
+		test.Fatal(err)
+	}
+
+	fixtures := []struct {
+		reader  client.Client
+		network client.StreamingClient
+	}{
+		{nil, network},
+		{reader, nil},
+	}
+	for _, fixture := range fixtures {
+		if streams, err := New(fixture.reader, fixture.network); err == nil || streams != nil {
+			test.Fatal(acceptedMessage)
+		}
+	}
+}
+
+func TestConvenienceVariantsHonorCallerCancellation(test *testing.T) {
+	operationContext, cancel := context.WithCancel(test.Context())
+	cancel()
+
+	if _, err := GetVariantPlaylists(operationContext, masterFixtureURL); !errors.Is(err, context.Canceled) {
+		test.Fatalf(injectedErrorFormat, nil, err)
+	}
+}
+
 const (
 	injectedMediaURL        = "https://cdn.example.test/old/media.m3u8"
 	injectedFinalMediaURL   = "https://cdn.example.test/path/media.m3u8"
@@ -42,7 +76,12 @@ func TestInjectedMediaReaderUsesFinalURLAndClosesBody(test *testing.T) {
 	httpClient := &http.Client{Transport: transport}
 	streamingClient := client.NewStreamingClient(httpClient)
 	test.Cleanup(streamingClient.Close)
-	reader := client.New(streamingClient)
+
+	reader, readerConstructorError := client.New(streamingClient)
+	if readerConstructorError != nil {
+		test.Fatal(readerConstructorError)
+	}
+
 	playlist := VariantPlaylist{Link: injectedMediaURL}
 
 	segments, err := collectSegmentMetasOnce(context.Background(), reader, playlist, "", injectedFilePrefix)
@@ -62,8 +101,17 @@ func TestInjectedMasterReaderHonorsCancellation(test *testing.T) {
 	httpClient := &http.Client{Transport: transport}
 	streamingClient := client.NewStreamingClient(httpClient)
 	test.Cleanup(streamingClient.Close)
-	reader := client.New(streamingClient)
-	client := newPlaylistClient(reader)
+
+	reader, readerConstructorError := client.New(streamingClient)
+	if readerConstructorError != nil {
+		test.Fatal(readerConstructorError)
+	}
+
+	client, clientConstructorError := New(reader, streamingClient)
+	if clientConstructorError != nil {
+		test.Fatal(clientConstructorError)
+	}
+
 	operationContext, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 

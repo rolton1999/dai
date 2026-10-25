@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 
 	"dai/internal/download"
@@ -17,6 +19,8 @@ const (
 	invalidJobsMessage                  = "jobs must be greater than zero"
 	resumeOnlyPlaylistMessage           = "resume is supported only for playlists"
 	resumeOverwriteMessage              = "resume cannot be combined with overwrite"
+	outputWriterIsRequiredMessage       = "CLI output writer is required"
+	usageMessage                        = "Usage: dai [flags] <Rutube video or playlist URL>\nFlags must precede the URL."
 )
 
 const (
@@ -44,16 +48,21 @@ type Command interface {
 	Run(context.Context, []string) error
 }
 
-func New(service download.Service) (Command, error) {
+func New(service download.Service, output io.Writer) (Command, error) {
 	if service == nil {
 		return nil, errors.New(downloadServiceIsRequiredMessage)
 	}
 
-	return &commandImpl{service: service}, nil
+	if output == nil {
+		return nil, errors.New(outputWriterIsRequiredMessage)
+	}
+
+	return &commandImpl{service: service, output: output}, nil
 }
 
 type commandImpl struct {
 	service download.Service
+	output  io.Writer
 }
 
 func (command *commandImpl) Run(operationContext context.Context, arguments []string) error {
@@ -67,6 +76,18 @@ func (command *commandImpl) Run(operationContext context.Context, arguments []st
 
 	overwrite := flags.Bool(overwriteFlag, false, overwriteHelp)
 	if err := flags.Parse(arguments); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			usage := &bytes.Buffer{}
+			_, _ = fmt.Fprintln(usage, usageMessage)
+
+			flags.SetOutput(usage)
+			flags.PrintDefaults()
+
+			_, err := io.Copy(command.output, usage)
+
+			return err
+		}
+
 		return err
 	}
 

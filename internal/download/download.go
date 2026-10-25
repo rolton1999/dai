@@ -110,7 +110,9 @@ func (service *serviceImpl) Video(operationContext context.Context, videoID stri
 		return err
 	}
 
-	return service.download(operationContext, info, target, options.Overwrite, service.logger, nil)
+	job := downloadJob{videoID: videoID, info: info, target: target}
+
+	return service.download(operationContext, job, options.Overwrite, service.logger, nil)
 }
 
 func (service *serviceImpl) Playlist(operationContext context.Context, playlistID string, options Options) (resultError error) {
@@ -144,27 +146,30 @@ func (service *serviceImpl) Playlist(operationContext context.Context, playlistI
 		}()
 	}
 
-	infos := make([]rutube.VideoInfo, 0, len(playlist.VideoIDs))
-	targets := make([]string, 0, len(playlist.VideoIDs))
+	jobs := make([]downloadJob, 0, len(playlist.VideoIDs))
 	seen := make(map[string]bool)
 
 	for _, videoID := range playlist.VideoIDs {
-		complete, err := recovery.inspect(operationContext, videoID)
-		if err != nil {
-			return err
+		complete := false
+		filename := ""
+
+		if recovery != nil {
+			complete, err = recovery.inspect(operationContext, videoID)
+			if err != nil {
+				return err
+			}
+
+			filename = recovery.filename(videoID)
 		}
 
 		var info rutube.VideoInfo
-		if complete {
-			info.Title = strings.TrimSuffix(recovery.filename(videoID), outputExtension)
-		} else {
+		if !complete {
 			info, err = service.provider.Video(operationContext, videoID)
 			if err != nil {
 				return err
 			}
 		}
 
-		filename := recovery.filename(videoID)
 		if filename == "" {
 			filename = safeFilename(info.Title)
 		}
@@ -181,43 +186,45 @@ func (service *serviceImpl) Playlist(operationContext context.Context, playlistI
 			}
 		}
 
-		if err := recovery.add(videoID, filename); err != nil {
-			return err
+		if recovery != nil {
+			if err := recovery.add(videoID, filename); err != nil {
+				return err
+			}
 		}
 
-		infos = append(infos, info)
-		targets = append(targets, target)
+		jobs = append(jobs, downloadJob{videoID: videoID, info: info, target: target, complete: complete})
 	}
 
-	if err := checkPlaylistFilenames(operationContext, directory, targets); err != nil {
+	if err := checkPlaylistFilenames(operationContext, directory, jobs); err != nil {
 		return err
 	}
 
-	if err := recovery.save(); err != nil {
-		return err
+	if recovery != nil {
+		if err := recovery.save(); err != nil {
+			return err
+		}
 	}
 
-	return service.downloadPlaylist(operationContext, infos, targets, options, recovery)
+	return service.downloadPlaylist(operationContext, jobs, options, recovery)
 }
 
 func (service *serviceImpl) downloadPlaylist(
 	operationContext context.Context,
-	infos []rutube.VideoInfo,
-	targets []string,
+	jobs []downloadJob,
 	options Options,
 	recovery *playlistRecovery,
 ) error {
-	jobs := options.Jobs
-	if jobs == 0 {
-		jobs = DefaultJobs
+	workerCount := options.Jobs
+	if workerCount == 0 {
+		workerCount = DefaultJobs
 	}
 
-	jobs = min(jobs, len(infos))
+	workerCount = min(workerCount, len(jobs))
 
 	operationContext, cancel := context.WithCancelCause(operationContext)
 	defer cancel(nil)
 
-	display := progress.NewPlaylist(service.logger, len(infos), jobs)
+	display := progress.NewPlaylist(service.logger, len(jobs), workerCount)
 	defer display.Close()
 
 	var (
@@ -227,11 +234,11 @@ func (service *serviceImpl) downloadPlaylist(
 
 	next := 0
 
-	for slot := range jobs {
+	for slot := range workerCount {
 		workers.Go(func() {
 			for {
 				scheduling.Lock()
-				if operationContext.Err() != nil || next == len(infos) {
+				if operationContext.Err() != nil || next == len(jobs) {
 					scheduling.Unlock()
 					return
 				}
@@ -240,18 +247,19 @@ func (service *serviceImpl) downloadPlaylist(
 				next++
 				scheduling.Unlock()
 
+				job := jobs[index]
 				logger := display.Item(slot, index)
 
 				var err error
 
-				if recovery.isComplete(targets[index]) {
-					logger.NewPrefix(filepath.Base(targets[index]))
+				if job.complete {
+					logger.NewPrefix(filepath.Base(job.target))
 				} else {
-					err = service.download(operationContext, infos[index], targets[index], options.Overwrite, logger, recovery)
+					err = service.download(operationContext, job, options.Overwrite, logger, recovery)
 				}
 
 				if err != nil {
-					cancel(fmt.Errorf(playlistVideoErrorFormat, index+1, infos[index].Title, err))
+					cancel(fmt.Errorf(playlistVideoErrorFormat, index+1, job.info.Title, err))
 				}
 
 				display.Finish(slot, err)
@@ -270,8 +278,7 @@ func (service *serviceImpl) downloadPlaylist(
 
 func (service *serviceImpl) download(
 	operationContext context.Context,
-	info rutube.VideoInfo,
-	target string,
+	job downloadJob,
 	overwrite bool,
 	logger progress.Logger,
 	recovery *playlistRecovery,
@@ -279,9 +286,9 @@ func (service *serviceImpl) download(
 	operationContext, cancel := context.WithTimeout(operationContext, videoTimeout)
 	defer cancel()
 
-	logger.NewPrefix(filepath.Base(target))
+	logger.NewPrefix(filepath.Base(job.target))
 
-	variants, err := service.streams.Variants(operationContext, info.MasterPlaylistLink)
+	variants, err := service.streams.Variants(operationContext, job.info.MasterPlaylistLink)
 	if err != nil {
 		return err
 	}
@@ -304,7 +311,7 @@ func (service *serviceImpl) download(
 		}
 	}()
 
-	workspace, err := os.MkdirTemp(filepath.Dir(target), outputWorkspacePattern)
+	workspace, err := os.MkdirTemp(filepath.Dir(job.target), outputWorkspacePattern)
 	if err != nil {
 		return err
 	}
@@ -331,14 +338,16 @@ func (service *serviceImpl) download(
 		return errors.New(converterDidNotProduceANonemptyFileMessage)
 	}
 
-	if err := recovery.prepare(operationContext, target, staging); err != nil {
-		return err
+	if recovery != nil {
+		if err := recovery.prepare(operationContext, job.videoID, staging); err != nil {
+			return err
+		}
 	}
 
 	if overwrite {
-		err = os.Rename(staging, target)
+		err = os.Rename(staging, job.target)
 	} else {
-		err = os.Link(staging, target)
+		err = os.Link(staging, job.target)
 	}
 
 	if err != nil {
@@ -346,6 +355,13 @@ func (service *serviceImpl) download(
 	}
 
 	return nil
+}
+
+type downloadJob struct {
+	videoID  string
+	info     rutube.VideoInfo
+	target   string
+	complete bool
 }
 
 func outputDirectory(directory string) (string, error) {
@@ -382,7 +398,7 @@ func checkDestination(path string, overwrite bool) error {
 	return nil
 }
 
-func checkPlaylistFilenames(operationContext context.Context, directory string, targets []string) (resultError error) {
+func checkPlaylistFilenames(operationContext context.Context, directory string, jobs []downloadJob) (resultError error) {
 	workspace, err := os.MkdirTemp(directory, outputPlanWorkspacePattern)
 	if err != nil {
 		return err
@@ -394,7 +410,9 @@ func checkPlaylistFilenames(operationContext context.Context, directory string, 
 
 	// Exclusive creation detects aliases using the destination filesystem's
 	// case and Unicode rules without touching existing output files.
-	for _, target := range targets {
+	for _, job := range jobs {
+		target := job.target
+
 		if err := operationContext.Err(); err != nil {
 			return err
 		}

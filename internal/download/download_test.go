@@ -162,9 +162,21 @@ func TestDownloadOwnsTemporaryFilesThroughConversion(test *testing.T) {
 			network := client.NewStreamingClient(nil)
 			defer network.Close()
 
-			reader := client.New(network)
-			provider := rutube.New(reader)
-			streams := hls.New(reader, network)
+			reader, readerConstructorError := client.New(network)
+			if readerConstructorError != nil {
+				test.Fatal(readerConstructorError)
+			}
+
+			provider, providerConstructorError := rutube.New(reader)
+			if providerConstructorError != nil {
+				test.Fatal(providerConstructorError)
+			}
+
+			streams, streamsConstructorError := hls.New(reader, network)
+			if streamsConstructorError != nil {
+				test.Fatal(streamsConstructorError)
+			}
+
 			converter := conversionAdapter(convert)
 
 			service, err := New(provider, streams, converter, logger)

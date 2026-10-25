@@ -2,12 +2,7 @@ package pipeline
 
 import (
 	"context"
-	"errors"
 	"sync"
-)
-
-const (
-	pipelineStageTypeMismatchMessage = "pipeline stage type mismatch"
 )
 
 const (
@@ -15,32 +10,36 @@ const (
 	processorWorkerCount = 8
 )
 
-type ProcessFunc[TInput, TOutput any] = func(context.Context, TInput) (TOutput, error)
+type ProcessFunc[TItem any] = func(context.Context, TItem) (TItem, error)
 
-type ProcessStage interface {
+type ProcessStage[TItem any] interface {
 	run(
 		context.Context,
-		<-chan any,
+		<-chan TItem,
 		func(error),
 		*sync.WaitGroup,
-	) <-chan any
+	) <-chan TItem
 }
 
-func NewProcessStage[TInput, TOutput any](process ProcessFunc[TInput, TOutput]) ProcessStage {
-	return &processStageImpl[TInput, TOutput]{process: process}
+func NewProcessStage[TItem any](process ProcessFunc[TItem]) ProcessStage[TItem] {
+	if process == nil {
+		return nil
+	}
+
+	return &processStageImpl[TItem]{process: process}
 }
 
-type processStageImpl[TInput, TOutput any] struct {
-	process ProcessFunc[TInput, TOutput]
+type processStageImpl[TItem any] struct {
+	process ProcessFunc[TItem]
 }
 
-func (processor *processStageImpl[TInput, TOutput]) run(
+func (processor *processStageImpl[TItem]) run(
 	operationContext context.Context,
-	input <-chan any,
+	input <-chan TItem,
 	report func(error),
 	workers *sync.WaitGroup,
-) <-chan any {
-	output := make(chan any, processorQueueSize)
+) <-chan TItem {
+	output := make(chan TItem, processorQueueSize)
 
 	var processors sync.WaitGroup
 	for range processorWorkerCount {
@@ -61,13 +60,7 @@ func (processor *processStageImpl[TInput, TOutput]) run(
 						return
 					}
 
-					typed, valid := value.(TInput)
-					if !valid {
-						report(errors.New(pipelineStageTypeMismatchMessage))
-						return
-					}
-
-					result, err := processor.process(operationContext, typed)
+					result, err := processor.process(operationContext, value)
 					if err != nil {
 						report(err)
 						return

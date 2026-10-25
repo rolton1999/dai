@@ -411,7 +411,8 @@ func TestPlaylistResumeRecognizesPublicationAfterCheckpoint(test *testing.T) {
 			}
 
 			target := filepath.Join(directory, filename)
-			if err := recovery.prepare(test.Context(), target, staging); err != nil {
+
+			if err := recovery.prepare(test.Context(), identifier, staging); err != nil {
 				test.Fatal(err)
 			}
 

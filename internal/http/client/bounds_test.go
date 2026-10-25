@@ -65,7 +65,11 @@ func TestReadClosesBodyOnTruncationAndReadFailure(test *testing.T) {
 	} {
 		body := &trackedBody{Reader: reader}
 		doer := &boundsDoer{body: body, length: int64(len(fixtureBody))}
-		client := New(doer)
+
+		client, clientConstructorError := New(doer)
+		if clientConstructorError != nil {
+			test.Fatal(clientConstructorError)
+		}
 
 		response, err := client.Read(context.Background(), fixtureURL)
 		if !errors.Is(err, io.ErrUnexpectedEOF) || !body.closed {
@@ -78,7 +82,11 @@ func TestReadRejectsDeclaredOversizeWithoutReading(test *testing.T) {
 	reader := strings.NewReader(fixtureBody)
 	body := &trackedBody{Reader: reader}
 	doer := &boundsDoer{body: body, length: MaximumBodySize + 1}
-	client := New(doer)
+
+	client, clientConstructorError := New(doer)
+	if clientConstructorError != nil {
+		test.Fatal(clientConstructorError)
+	}
 
 	response, err := client.Read(context.Background(), fixtureURL)
 	if err == nil || !body.closed || reader.Len() != len(fixtureBody) {
@@ -93,7 +101,11 @@ func TestReadLimitsUnknownLengthBody(test *testing.T) {
 	reader := strings.NewReader(contents)
 	body := &trackedBody{Reader: reader}
 	doer := &boundsDoer{body: body, length: -1}
-	client := New(doer)
+
+	client, clientConstructorError := New(doer)
+	if clientConstructorError != nil {
+		test.Fatal(clientConstructorError)
+	}
 
 	response, err := client.Read(context.Background(), fixtureURL)
 	if err == nil || !body.closed || reader.Len() != len(contents)-(MaximumBodySize+1) {
@@ -130,7 +142,11 @@ func TestReadCancelsStalledHeadersAndBodies(test *testing.T) {
 			streamingClient := NewStreamingClient(transport)
 			defer streamingClient.Close()
 
-			client := New(streamingClient)
+			client, clientConstructorError := New(streamingClient)
+			if clientConstructorError != nil {
+				test.Fatal(clientConstructorError)
+			}
+
 			operationContext, cancel := context.WithCancel(context.Background())
 			result := make(chan error, 1)
 
@@ -189,7 +205,11 @@ func TestReadHonorsCallerDeadline(test *testing.T) {
 		started:  make(chan struct{}),
 		finished: make(chan struct{}),
 	}
-	client := New(doer)
+
+	client, clientConstructorError := New(doer)
+	if clientConstructorError != nil {
+		test.Fatal(clientConstructorError)
+	}
 
 	operationContext, cancel := context.WithTimeout(context.Background(), fixtureCanceledDeadline)
 	defer cancel()
@@ -218,7 +238,10 @@ func TestReadUsesFinalRedirectURL(test *testing.T) {
 	streamingClient := NewStreamingClient(transport)
 	defer streamingClient.Close()
 
-	client := New(streamingClient)
+	client, clientConstructorError := New(streamingClient)
+	if clientConstructorError != nil {
+		test.Fatal(clientConstructorError)
+	}
 
 	response, err := client.Read(context.Background(), server.URL+fixtureRedirectPath)
 	if err != nil || response.URL == nil || response.URL.Path != fixtureFinalPath || string(response.Body) != fixtureBody {
@@ -250,7 +273,11 @@ func (doer *deadlineDoer) Close() {
 
 func TestReadAlwaysAddsRequestDeadline(test *testing.T) {
 	doer := &deadlineDoer{}
-	client := New(doer)
+
+	client, clientConstructorError := New(doer)
+	if clientConstructorError != nil {
+		test.Fatal(clientConstructorError)
+	}
 
 	_, err := client.Read(context.Background(), fixtureURL)
 	if err != nil || !doer.observed {
@@ -279,7 +306,11 @@ func TestReadClosesResponseReturnedWithTransportError(test *testing.T) {
 	reader := strings.NewReader(fixtureBody)
 	body := &trackedBody{Reader: reader}
 	doer := &responseErrorDoer{body: body}
-	client := New(doer)
+
+	client, clientConstructorError := New(doer)
+	if clientConstructorError != nil {
+		test.Fatal(clientConstructorError)
+	}
 
 	response, err := client.Read(context.Background(), fixtureURL)
 	if !errors.Is(err, io.ErrUnexpectedEOF) || !body.closed {
@@ -318,7 +349,11 @@ func TestStreamingClientReusesAndClosesConnections(test *testing.T) {
 	httpClient := NewStreamingClient(nil)
 	defer httpClient.Close()
 
-	reader := New(httpClient)
+	reader, readerConstructorError := New(httpClient)
+	if readerConstructorError != nil {
+		test.Fatal(readerConstructorError)
+	}
+
 	for range requestCount {
 		if _, err := reader.Read(context.Background(), server.URL); err != nil {
 			test.Fatal(err)

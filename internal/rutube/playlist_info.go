@@ -38,14 +38,21 @@ func (playlistInfo PlaylistInfo) String() string {
 	return fmt.Sprintf(playlistInfoDisplayFormat, playlistInfo.Title, playlistInfo.VideoIDs)
 }
 
-func GetPlaylistInfo(playlistID string) (PlaylistInfo, error) {
+func GetPlaylistInfo(operationContext context.Context, playlistID string) (PlaylistInfo, error) {
 	httpClient := client.NewStreamingClient(nil)
 	defer httpClient.Close()
 
-	reader := client.New(httpClient)
-	provider := newMetadataProvider(reader)
+	reader, err := client.New(httpClient)
+	if err != nil {
+		return PlaylistInfo{}, err
+	}
 
-	return provider.Playlist(context.Background(), playlistID)
+	provider, err := New(reader)
+	if err != nil {
+		return PlaylistInfo{}, err
+	}
+
+	return provider.Playlist(operationContext, playlistID)
 }
 
 func getPlaylistInfoWithReader(

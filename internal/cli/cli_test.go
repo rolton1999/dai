@@ -1,11 +1,67 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"dai/internal/download"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 )
+
+func TestHelpPrintsUsageWithoutDownloading(test *testing.T) {
+	const (
+		longHelpFlag      = "--help"
+		shortHelpFlag     = "-h"
+		missingHelpFormat = "help omitted %q: %s"
+	)
+
+	for _, helpFlag := range []string{longHelpFlag, shortHelpFlag} {
+		test.Run(helpFlag, func(test *testing.T) {
+			service := &fixtureService{}
+			output := &bytes.Buffer{}
+
+			command, err := New(service, output)
+			if err != nil {
+				test.Fatal(err)
+			}
+
+			if err := command.Run(test.Context(), []string{helpFlag}); err != nil {
+				test.Fatal(err)
+			}
+
+			for _, expected := range []string{usageMessage, outputHelp, jobsHelp, resumeHelp, overwriteHelp} {
+				if !strings.Contains(output.String(), expected) {
+					test.Fatalf(missingHelpFormat, expected, output.String())
+				}
+			}
+
+			if service.kind != notExpected {
+				test.Fatalf(cliTestBadDispatch, service)
+			}
+		})
+	}
+}
+
+func TestConstructorRejectsMissingDependencies(test *testing.T) {
+	const acceptedMessage = "accepted missing CLI dependency"
+
+	service := &fixtureService{}
+
+	fixtures := []struct {
+		service download.Service
+		output  io.Writer
+	}{
+		{nil, io.Discard},
+		{service, nil},
+	}
+	for _, fixture := range fixtures {
+		if command, err := New(fixture.service, fixture.output); err == nil || command != nil {
+			test.Fatal(acceptedMessage)
+		}
+	}
+}
 
 const (
 	cliTestExpectedMissingArgumentErrorGot = "expected missing argument error, got %v"
@@ -42,7 +98,7 @@ func (service *fixtureService) Playlist(_ context.Context, id string, options do
 func TestRunWithoutURL(test *testing.T) {
 	service := &fixtureService{}
 
-	command, _ := New(service)
+	command, _ := New(service, io.Discard)
 	if err := command.Run(context.Background(), nil); !errors.Is(err, errWithoutArgs) {
 		test.Fatalf(cliTestExpectedMissingArgumentErrorGot, err)
 	}
@@ -51,7 +107,7 @@ func TestRunWithoutURL(test *testing.T) {
 func TestRunWithEmptyURL(test *testing.T) {
 	service := &fixtureService{}
 
-	command, _ := New(service)
+	command, _ := New(service, io.Discard)
 	if err := command.Run(context.Background(), []string{""}); !errors.Is(err, errEmptyLink) {
 		test.Fatalf(cliTestExpectedEmptyURLErrorGot, err)
 	}
@@ -60,7 +116,7 @@ func TestRunWithEmptyURL(test *testing.T) {
 func TestRunDispatchesOptions(test *testing.T) {
 	service := &fixtureService{}
 
-	command, _ := New(service)
+	command, _ := New(service, io.Discard)
 	if err := command.Run(context.Background(), []string{cliTestOverwrite, cliTestOutput, test.TempDir(), cliTestHttpsRutubeRuVideo + fixtureVideoID + cliTestShare1Fragment}); err != nil {
 		test.Fatal(err)
 	}
@@ -86,7 +142,7 @@ func TestPlaylistJobsOption(test *testing.T) {
 		test.Run(map[bool]string{false: "default", true: "explicit"}[explicit], func(test *testing.T) {
 			service := &fixtureService{}
 
-			command, err := New(service)
+			command, err := New(service, io.Discard)
 			if err != nil {
 				test.Fatal(err)
 			}
@@ -115,7 +171,7 @@ func TestInvalidJobsNeverDispatches(test *testing.T) {
 		test.Run(value, func(test *testing.T) {
 			service := &fixtureService{}
 
-			command, err := New(service)
+			command, err := New(service, io.Discard)
 			if err != nil {
 				test.Fatal(err)
 			}
@@ -135,7 +191,7 @@ const (
 func TestResumePlaylistDispatchesOptions(test *testing.T) {
 	service := &fixtureService{}
 
-	command, err := New(service)
+	command, err := New(service, io.Discard)
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -158,7 +214,7 @@ func TestResumeRejectsSingleVideoAndOverwrite(test *testing.T) {
 	for _, arguments := range fixtures {
 		service := &fixtureService{}
 
-		command, err := New(service)
+		command, err := New(service, io.Discard)
 		if err != nil {
 			test.Fatal(err)
 		}

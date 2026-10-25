@@ -6,9 +6,11 @@ resolution HLS variant and saves it as MP4 using FFmpeg, without re-encoding.
 ## Usage
 
 Requires Go 1.25 or later to build, and `ffmpeg` and `ffprobe` on `PATH` to run.
+Supported platforms are macOS, Linux, DragonFly BSD, FreeBSD, NetBSD, and OpenBSD.
 
 ```sh
 make build
+./bin/dai --help
 ./bin/dai https://rutube.ru/video/dace2feac379872d42e49b6b25c0587a/
 ./bin/dai --resume --jobs 4 --output ./videos https://rutube.ru/plst/1840659/
 ```
@@ -17,6 +19,7 @@ Flags must precede the URL:
 
 | Flag | Description |
 | --- | --- |
+| `-h`, `--help` | Print usage and available flags, then exit successfully. |
 | `--output <directory>` | Destination directory; defaults to the current directory. |
 | `--jobs <count>` | Concurrent playlist videos; defaults to 4. Use 1 for sequential downloads. |
 | `--resume` | Record playlist progress and reuse verified completed MP4s on restart. |
@@ -81,6 +84,12 @@ Tests cover parsing, retries, cancellation, worker shutdown, output collisions
 under the host filesystem's case and Unicode normalization rules,
 concurrent publication, playlist worker limits and slot reuse, cancellation
 cleanup, independent progress rows, and playlist recovery after interruption.
+They also cover CLI help, missing constructor dependencies, caller cancellation
+through convenience APIs, and competing conversions targeting the same staging
+path. Pipeline stages share a compile-time item type; missing callbacks are
+rejected before workers start. Playlist scheduling keeps identity, metadata,
+destination, and completion state in one job record. The downloader owns staging
+and final publication; FFmpeg produces and validates the staging MP4.
 Both HLS parsers have fuzz targets.
 Recovery tests cover output checksums, stable filenames, invalid manifests,
 generated filenames truncated at dots, spaces, and UTF-8 boundaries, checkpoint
@@ -95,5 +104,4 @@ Live checksum tests are opt-in: `make e2e-single`, `make e2e-playlist` (one job)
 `make test-all` runs all suites, stopping on failure. See
 [live test requirements and reference checksums](tests/e2e/README.md).
 Local fixtures do not establish live Rutube compatibility; live checksum tests
-have not been rerun against the current implementation. Windows resume behavior
-has been cross-compiled but not tested at runtime.
+have not been rerun against the current implementation.

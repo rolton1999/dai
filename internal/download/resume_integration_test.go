@@ -108,9 +108,22 @@ func TestLocalPlaylistResumeReusesConvertedMP4s(test *testing.T) {
 	for attempt := range recoveryIntegrationAttempts {
 		network := server.Client()
 		doer := &localDoer{serverURL: server.URL, client: network}
-		reader := client.New(doer)
-		provider := rutube.New(reader)
-		streams := hls.New(reader, doer)
+
+		reader, readerConstructorError := client.New(doer)
+		if readerConstructorError != nil {
+			test.Fatal(readerConstructorError)
+		}
+
+		provider, providerConstructorError := rutube.New(reader)
+		if providerConstructorError != nil {
+			test.Fatal(providerConstructorError)
+		}
+
+		streams, streamsConstructorError := hls.New(reader, doer)
+		if streamsConstructorError != nil {
+			test.Fatal(streamsConstructorError)
+		}
+
 		converter := ffmpeg.New(nil)
 		logger := progress.NewLogger()
 

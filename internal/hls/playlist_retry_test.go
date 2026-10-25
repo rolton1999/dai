@@ -42,7 +42,7 @@ func TestMasterPlaylistRetriesInterruptedBody(test *testing.T) {
 
 		http.DefaultClient = &http.Client{Transport: transport}
 
-		playlists, err := hls.GetVariantPlaylists(fixtureOrigin)
+		playlists, err := hls.GetVariantPlaylists(context.Background(), fixtureOrigin)
 		if err != nil || len(playlists) != 1 || attempts != 2 {
 			test.Fatalf("playlists=%v attempts=%d error=%v", playlists, attempts, err)
 		}
