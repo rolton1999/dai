@@ -206,9 +206,9 @@ Live-service compatibility was not rerun for this policy change.
   attempts, exponential backoff, and per-attempt and per-segment deadlines.
 - [x] Remove partial segment files between attempts and remove the operation's
   temporary directory when a download fails.
-- [ ] Propagate producer and processor errors to the caller instead of discarding
+- [x] Propagate producer and processor errors to the caller instead of discarding
   them or requiring errors to be embedded in result values.
-- [ ] Cancel outstanding work after a failure and wait for workers to finish
+- [x] Cancel outstanding work after a failure and wait for workers to finish
   before returning.
 - [ ] Preserve segment ordering despite concurrent completion.
 - [ ] Give one download operation ownership of its temporary directory and remove
@@ -223,6 +223,38 @@ Tests:
 - Verify all workers exit and cleanup happens only after they stop writing.
 - Verify progress reaches 100%, including a one-segment download.
 - Run concurrency tests with race detection.
+
+Pipeline error propagation and cancellation extracted from
+`codex/fix-all-known-bugs` (`a024eae`) onto
+`codex/fix-pipeline-errors-and-cancellation`, based on `master` at `15005d0`.
+The extraction preserves the newer HTTP client ownership, retry classification,
+and deterministic backoff tests already merged into master.
+
+`Pipeline.Run` and stage callbacks receive context explicitly. The first producer,
+processor or finalizer error cancels the pipeline and is returned without being
+replaced by sibling cancellation errors. Run joins all workers and channel-closing
+goroutines before returning. Finalizers share the last stage's channel, preserving
+work distribution rather than broadcasting each item. Invalid stage types and
+missing producers/finalizers return errors instead of panicking.
+
+HLS segment requests inherit the pipeline context and retain their existing
+per-segment and per-attempt limits. A failed segment cancels sibling requests;
+failed-download cleanup runs only after they finish. Segment errors no longer
+travel inside result values or through a shared error pointer. Callbacks must
+honor cancellation; the pipeline cannot forcibly stop a callback that ignores its
+context. CLI-wide cancellation, successful-download temporary ownership, progress
+completion, and output safety remain separate work.
+
+Regression tests cover producer/processor/finalizer failures, caller cancellation,
+pre-canceled runs, incompatible types, missing stages, multiple producers and
+finalizers delivering each item once, and worker completion before Run returns.
+A public HLS regression uses virtual time to stall one request while another
+returns HTTP 404; it verifies prompt cancellation, preservation of the original
+HTTP error, request completion, and removal of temporary artifacts.
+
+Verification: `make build`, pinned `make lint`, and `make test` pass. One hundred
+race-enabled repetitions of both pipeline and HLS tests pass. Live Rutube and
+FFmpeg smoke tests were not rerun for this pipeline-only extraction.
 
 ## 5. Make output naming and FFmpeg conversion safe
 

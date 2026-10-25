@@ -9,22 +9,29 @@ import (
 	"os"
 )
 
+const (
+	temporaryDirectoryErrorFormat = "cannot create tmp dir: %w"
+	mediaPlaylistErrorFormat      = "cannot parse media playlist: %w"
+	loadingProgressFormat         = " ~ loading %d%%"
+	progressPercent               = 100
+)
+
 func DownloadTSFiles(logger progress.Logger, expectedName string, playlist VariantPlaylist) ([]string, error) {
-	dirName, err := os.MkdirTemp("", "")
+	directoryName, err := os.MkdirTemp("", "")
 	if err != nil {
-		return nil, fmt.Errorf("cannot create tmp dir: %w", err)
+		return nil, fmt.Errorf(temporaryDirectoryErrorFormat, err)
 	}
 
 	downloadSucceeded := false
 	defer func() {
 		if !downloadSucceeded {
-			_ = os.RemoveAll(dirName)
+			_ = os.RemoveAll(directoryName)
 		}
 	}()
 
-	segmentMetas, err := collectSegmentMetas(playlist, dirName, expectedName)
+	segmentMetas, err := collectSegmentMetas(playlist, directoryName, expectedName)
 	if err != nil {
-		return nil, fmt.Errorf("cannot parse media playlist: %w", err)
+		return nil, fmt.Errorf(mediaPlaylistErrorFormat, err)
 	}
 
 	produceStage := newProduceStage(segmentMetas)
@@ -33,27 +40,20 @@ func DownloadTSFiles(logger progress.Logger, expectedName string, playlist Varia
 	defer httpClient.Close()
 
 	loadStage := newLoadStage(httpClient)
-	consumeStage, listOfFiles := newConsumeStage(logger, len(segmentMetas), &err)
+	consumeStage, listOfFiles := newConsumeStage(logger, len(segmentMetas))
 
-	pipeline := pipeline.NewPipeline()
-	pipeline.AppendProducer(produceStage)
-	pipeline.AppendMedium(loadStage)
-	pipeline.AppendFinalizer(consumeStage)
-	pipeline.Run()
+	downloadPipeline := pipeline.NewPipeline()
+	downloadPipeline.AppendProducer(produceStage)
+	downloadPipeline.AppendMedium(loadStage)
+	downloadPipeline.AppendFinalizer(consumeStage)
 
-	if err != nil {
+	if err := downloadPipeline.Run(context.Background()); err != nil {
 		return nil, err
 	}
 
 	downloadSucceeded = true
 
 	return listOfFiles, nil
-}
-
-type segmentLoadResult struct {
-	segmentIndex int
-	fileName     string
-	err          error
 }
 
 type segmentMeta struct {
@@ -63,14 +63,14 @@ type segmentMeta struct {
 }
 
 func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage {
-	segmentMetaProducedIdx := 0
-	getNext := func() (segmentMeta, error, bool) {
-		if segmentMetaProducedIdx == len(segmentMetas) {
+	nextSegmentIndex := 0
+	getNext := func(context.Context) (segmentMeta, error, bool) {
+		if nextSegmentIndex == len(segmentMetas) {
 			return segmentMeta{}, nil, true
 		}
 
-		meta := segmentMetas[segmentMetaProducedIdx]
-		segmentMetaProducedIdx += 1
+		meta := segmentMetas[nextSegmentIndex]
+		nextSegmentIndex += 1
 
 		return meta, nil, false
 	}
@@ -79,32 +79,24 @@ func newProduceStage(segmentMetas []segmentMeta) pipeline.ProduceStage {
 }
 
 func newLoadStage(httpClient client.StreamingClient) pipeline.ProcessStage {
-	return pipeline.NewProcessStage(func(meta segmentMeta) (segmentLoadResult, error) {
-		operationContext, cancel := context.WithTimeout(context.Background(), segmentDownloadTimeout)
+	return pipeline.NewProcessStage(func(operationContext context.Context, meta segmentMeta) (segmentMeta, error) {
+		operationContext, cancel := context.WithTimeout(operationContext, segmentDownloadTimeout)
 		defer cancel()
 
-		err := downloadSegment(operationContext, httpClient, meta, waitForSegmentRetry)
-		if err != nil {
-			return segmentLoadResult{segmentIndex: meta.index, err: err}, err
-		}
-
-		return segmentLoadResult{segmentIndex: meta.index, fileName: meta.fileName}, nil
+		return meta, downloadSegment(operationContext, httpClient, meta, waitForSegmentRetry)
 	})
 }
 
-func newConsumeStage(logger progress.Logger, howMany int, err *error) (pipeline.FinalizeStage, []string) {
-	loadMetaConsumedIdx := 0
-	listOfFiles := make([]string, howMany)
+func newConsumeStage(logger progress.Logger, segmentCount int) (pipeline.FinalizeStage, []string) {
+	completedSegmentCount := 0
+	listOfFiles := make([]string, segmentCount)
 
-	return pipeline.NewFinalizeStage(func(meta segmentLoadResult) {
-		if meta.err != nil {
-			*err = meta.err
-			return
-		}
+	return pipeline.NewFinalizeStage(func(_ context.Context, meta segmentMeta) error {
+		listOfFiles[meta.index] = meta.fileName
+		logger.UpdateWithSuffix(fmt.Sprintf(loadingProgressFormat, progressPercent*completedSegmentCount/len(listOfFiles)))
 
-		listOfFiles[meta.segmentIndex] = meta.fileName
-		logger.UpdateWithSuffix(fmt.Sprintf(" ~ loading %d%%", 100*loadMetaConsumedIdx/len(listOfFiles)))
+		completedSegmentCount += 1
 
-		loadMetaConsumedIdx += 1
+		return nil
 	}), listOfFiles
 }

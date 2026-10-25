@@ -1,43 +1,54 @@
 package pipeline
 
-type ProduceFunc[TOutput any] = func() (TOutput, error, bool)
+import (
+	"context"
+	"sync"
+)
+
+const producerQueueSize = 8
+
+type ProduceFunc[TOutput any] = func(context.Context) (TOutput, error, bool)
 
 type ProduceStage interface {
-	run(stopChannel chan struct{}) <-chan any
-}
-
-type produceStageImpl[TOutput any] struct {
-	outputQueueSize int
-	produce         ProduceFunc[TOutput]
+	run(context.Context, func(error), *sync.WaitGroup) <-chan any
 }
 
 func NewProduceStage[TOutput any](produce ProduceFunc[TOutput]) ProduceStage {
-	const defaultOutputQueueSize = 8
-
-	return &produceStageImpl[TOutput]{
-		outputQueueSize: defaultOutputQueueSize,
-		produce:         produce,
-	}
+	return &produceStageImpl[TOutput]{produce: produce}
 }
 
-func (producer *produceStageImpl[TOutput]) run(stopChannel chan struct{}) <-chan any {
-	outputChannel := make(chan any, producer.outputQueueSize)
-	go func() {
-		defer close(outputChannel)
+type produceStageImpl[TOutput any] struct {
+	produce ProduceFunc[TOutput]
+}
+
+func (producer *produceStageImpl[TOutput]) run(operationContext context.Context, report func(error), workers *sync.WaitGroup) <-chan any {
+	output := make(chan any, producerQueueSize)
+
+	workers.Go(func() {
+		defer close(output)
 
 		for {
-			output, _, done := producer.produce()
+			if operationContext.Err() != nil {
+				return
+			}
+
+			value, err, done := producer.produce(operationContext)
+			if err != nil {
+				report(err)
+				return
+			}
+
 			if done {
 				return
 			}
 
 			select {
-			case <-stopChannel:
+			case output <- value:
+			case <-operationContext.Done():
 				return
-			case outputChannel <- output:
 			}
 		}
-	}()
+	})
 
-	return outputChannel
+	return output
 }

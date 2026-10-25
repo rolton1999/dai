@@ -1,6 +1,9 @@
 package hls_test
 
 import (
+	"context"
+	"dai/internal/http/client"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -8,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"dai/internal/hls"
 )
@@ -265,4 +269,68 @@ func TestDownloadTSFilesRejectsEncryptionBeforeSegmentRequests(test *testing.T) 
 	if err != nil || len(artifacts) != 0 {
 		test.Fatalf("temporary artifacts=%v error=%v", artifacts, err)
 	}
+}
+
+func TestDownloadFailureCancelsAndJoinsSiblingRequest(test *testing.T) {
+	const (
+		cancellationFailureFormat = "files=%v error=%v elapsed=%s"
+		siblingRunningMessage     = "sibling request still running after download returned"
+		cleanupFailureFormat      = "temporary artifacts=%v error=%v"
+	)
+
+	synctest.Test(test, func(test *testing.T) {
+		setFixtureClient(test, fixtureMinimalPlaylist, http.StatusOK)
+
+		originalTransport := http.DefaultClient.Transport
+		siblingStarted := make(chan struct{})
+		siblingStopped := make(chan struct{})
+		http.DefaultClient.Transport = fixtureTransport(func(request *http.Request) (*http.Response, error) {
+			switch request.URL.Path {
+			case fixtureFirstSegmentPath:
+				select {
+				case <-siblingStarted:
+				case <-request.Context().Done():
+					return nil, request.Context().Err()
+				}
+
+				bodyReader := strings.NewReader("")
+				responseBody := io.NopCloser(bodyReader)
+				response := &http.Response{
+					StatusCode: http.StatusNotFound,
+					Body:       responseBody,
+					Request:    request,
+				}
+
+				return response, nil
+			case fixtureSecondSegmentPath:
+				close(siblingStarted)
+				defer close(siblingStopped)
+
+				<-request.Context().Done()
+
+				return nil, request.Context().Err()
+			default:
+				return originalTransport.RoundTrip(request)
+			}
+		})
+
+		started := time.Now()
+		files, err := hls.DownloadTSFiles(silentLogger{}, fixtureOutputName, hls.VariantPlaylist{Link: fixtureOrigin + fixturePlaylistPath})
+
+		var statusError *client.StatusError
+		if files != nil || !errors.As(err, &statusError) || statusError.Code != http.StatusNotFound || errors.Is(err, context.Canceled) || time.Since(started) != 0 {
+			test.Fatalf(cancellationFailureFormat, files, err, time.Since(started))
+		}
+
+		select {
+		case <-siblingStopped:
+		default:
+			test.Fatal(siblingRunningMessage)
+		}
+
+		artifacts, err := os.ReadDir(os.Getenv(fixtureTemporaryDirectoryKey))
+		if err != nil || len(artifacts) != 0 {
+			test.Fatalf(cleanupFailureFormat, artifacts, err)
+		}
+	})
 }

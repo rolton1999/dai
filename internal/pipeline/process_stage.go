@@ -1,65 +1,92 @@
 package pipeline
 
-import "sync"
+import (
+	"context"
+	"errors"
+	"sync"
+)
 
-type ProcessFunc[TInput, TOutput any] = func(TInput) (TOutput, error)
+const (
+	pipelineStageTypeMismatchMessage = "pipeline stage type mismatch"
+)
+
+const (
+	processorQueueSize   = 8
+	processorWorkerCount = 8
+)
+
+type ProcessFunc[TInput, TOutput any] = func(context.Context, TInput) (TOutput, error)
 
 type ProcessStage interface {
-	run(inputChannel <-chan any, stopChannel chan struct{}) <-chan any
-}
-
-type processStageImpl[TInput, TOutput any] struct {
-	queueSize   int
-	workerCount int
-
-	process ProcessFunc[TInput, TOutput]
+	run(
+		context.Context,
+		<-chan any,
+		func(error),
+		*sync.WaitGroup,
+	) <-chan any
 }
 
 func NewProcessStage[TInput, TOutput any](process ProcessFunc[TInput, TOutput]) ProcessStage {
-	const (
-		defaultQueueSize   = 8
-		defaultWorkerCount = 8
-	)
-
-	return &processStageImpl[TInput, TOutput]{
-		queueSize:   defaultQueueSize,
-		workerCount: defaultWorkerCount,
-		process:     process,
-	}
+	return &processStageImpl[TInput, TOutput]{process: process}
 }
 
-func (processor *processStageImpl[TInput, TOutput]) run(inputChannel <-chan any, stopChannel chan struct{}) <-chan any {
-	outputChannel := make(chan any, processor.queueSize)
+type processStageImpl[TInput, TOutput any] struct {
+	process ProcessFunc[TInput, TOutput]
+}
 
-	workersDone := sync.WaitGroup{}
-	for range processor.workerCount {
-		workersDone.Go(func() {
+func (processor *processStageImpl[TInput, TOutput]) run(
+	operationContext context.Context,
+	input <-chan any,
+	report func(error),
+	workers *sync.WaitGroup,
+) <-chan any {
+	output := make(chan any, processorQueueSize)
+
+	var processors sync.WaitGroup
+	for range processorWorkerCount {
+		processors.Add(1)
+		workers.Go(func() {
+			defer processors.Done()
+
 			for {
 				select {
-				case <-stopChannel:
+				case <-operationContext.Done():
 					return
-				case inputValue, open := <-inputChannel:
+				case value, open := <-input:
 					if !open {
 						return
 					}
 
-					input := inputValue.(TInput)
-
-					output, _ := processor.process(input)
-					select {
-					case <-stopChannel:
+					if operationContext.Err() != nil {
 						return
-					case outputChannel <- output:
+					}
+
+					typed, valid := value.(TInput)
+					if !valid {
+						report(errors.New(pipelineStageTypeMismatchMessage))
+						return
+					}
+
+					result, err := processor.process(operationContext, typed)
+					if err != nil {
+						report(err)
+						return
+					}
+
+					select {
+					case output <- result:
+					case <-operationContext.Done():
+						return
 					}
 				}
 			}
 		})
 	}
 
-	go func() {
-		workersDone.Wait()
-		close(outputChannel)
-	}()
+	workers.Go(func() {
+		processors.Wait()
+		close(output)
+	})
 
-	return outputChannel
+	return output
 }

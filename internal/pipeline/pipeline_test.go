@@ -1,6 +1,7 @@
 package pipeline_test
 
 import (
+	"context"
 	"testing"
 
 	"dai/internal/pipeline"
@@ -12,10 +13,13 @@ const (
 )
 
 func TestPipelineProcessesEveryItem(test *testing.T) {
+	operationContext, cancel := context.WithTimeout(context.Background(), pipelineTestDeadline)
+	defer cancel()
+
 	nextItem := 0
 	processedItems := make(map[int]int)
 	downloadPipeline := pipeline.NewPipeline()
-	downloadPipeline.AppendProducer(pipeline.NewProduceStage(func() (int, error, bool) {
+	producer := pipeline.NewProduceStage(func(context.Context) (int, error, bool) {
 		if nextItem == stageItemCount {
 			return 0, nil, true
 		}
@@ -24,14 +28,23 @@ func TestPipelineProcessesEveryItem(test *testing.T) {
 		nextItem++
 
 		return item, nil, false
-	}))
-	downloadPipeline.AppendMedium(pipeline.NewProcessStage(func(item int) (int, error) {
+	})
+	processor := pipeline.NewProcessStage(func(_ context.Context, item int) (int, error) {
 		return item * stageMultiplier, nil
-	}))
-	downloadPipeline.AppendFinalizer(pipeline.NewFinalizeStage(func(item int) {
+	})
+	finalizer := pipeline.NewFinalizeStage(func(_ context.Context, item int) error {
 		processedItems[item]++
-	}))
-	downloadPipeline.Run()
+
+		return nil
+	})
+
+	downloadPipeline.AppendProducer(producer)
+	downloadPipeline.AppendMedium(processor)
+	downloadPipeline.AppendFinalizer(finalizer)
+
+	if err := downloadPipeline.Run(operationContext); err != nil {
+		test.Fatal(err)
+	}
 
 	if len(processedItems) != stageItemCount {
 		test.Fatalf("expected %d distinct items, got %d", stageItemCount, len(processedItems))
