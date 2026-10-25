@@ -15,11 +15,6 @@ type retryableError interface {
 }
 
 func IsRetryable(err error) bool {
-	var notRetryable *notRetryableError
-	if errors.As(err, &notRetryable) {
-		return false
-	}
-
 	if errors.Is(err, context.Canceled) {
 		return false
 	}
@@ -62,4 +57,8 @@ func (failure *notRetryableError) Error() string {
 
 func (failure *notRetryableError) Unwrap() error {
 	return failure.cause
+}
+
+func (failure *notRetryableError) Retryable() bool {
+	return false
 }
