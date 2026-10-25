@@ -68,7 +68,7 @@ const (
 	ffprobeName       = "ffprobe"
 )
 
-type Runner interface {
+type processRunner interface {
 	Run(context.Context, string, []string) ([]byte, error)
 }
 
@@ -81,7 +81,7 @@ type Converter interface {
 	) error
 }
 
-func New(runner Runner) Converter {
+func New(runner processRunner) Converter {
 	if runner == nil {
 		runner = &execRunner{}
 	}
@@ -90,7 +90,7 @@ func New(runner Runner) Converter {
 }
 
 type converterImpl struct {
-	runner Runner
+	runner processRunner
 }
 
 func (converter *converterImpl) Convert(
@@ -106,61 +106,19 @@ func (converter *converterImpl) Convert(
 	operationContext, cancel := context.WithTimeout(operationContext, conversionTimeout)
 	defer cancel()
 
-	if len(segments) == 0 {
-		return errors.New(cannotConvertAnEmptySegmentListMessage)
-	}
-
-	resultPath, err := filepath.Abs(resultName)
+	resultPath, err := validateConversionInputs(segments, resultName)
 	if err != nil {
 		return err
 	}
 
-	if _, err := os.Lstat(resultPath); err == nil {
-		return errors.New(conversionDestinationAlreadyExistsMessage)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-
-	for _, segment := range segments {
-		info, err := os.Stat(segment)
-		if err != nil {
-			return err
-		}
-
-		if !info.Mode().IsRegular() || info.Size() == 0 {
-			return errors.New(missingOrEmptySegmentMessage)
-		}
-	}
-
-	manifest, err := os.CreateTemp(filepath.Dir(segments[0]), manifestPattern)
+	manifestPath, err := createConcatManifest(segments)
 	if err != nil {
 		return err
 	}
 
 	defer func() {
-		_ = manifest.Close()
-		resultError = errors.Join(resultError, os.Remove(manifest.Name()))
+		resultError = errors.Join(resultError, os.Remove(manifestPath))
 	}()
-
-	for _, segment := range segments {
-		absolute, err := filepath.Abs(segment)
-		if err != nil {
-			return err
-		}
-
-		if strings.ContainsAny(absolute, lineBreaks) {
-			return errors.New(segmentPathContainsANewlineMessage)
-		}
-
-		escaped := strings.ReplaceAll(absolute, concatQuote, escapedConcatQuote)
-		if _, err := fmt.Fprintf(manifest, manifestEntryFormat, escaped); err != nil {
-			return err
-		}
-	}
-
-	if err := manifest.Close(); err != nil {
-		return err
-	}
 
 	workspace, err := os.MkdirTemp(filepath.Dir(resultPath), conversionWorkspacePattern)
 	if err != nil {
@@ -173,11 +131,23 @@ func (converter *converterImpl) Convert(
 
 	stagedPath := filepath.Join(workspace, conversionStagedFilename)
 
-	arguments := []string{noStdinFlag, noOverwriteFlag, inputFormatFlag, concatFormat, concatSafetyFlag, allowAbsolutePaths, inputFlag, manifest.Name(), codecFlag, copyCodec, audioFilterFlag, aacBitstreamFilter, stagedPath}
+	arguments := conversionArguments(manifestPath, stagedPath)
 	if err := converter.convert(operationContext, logger, arguments); err != nil {
 		return err
 	}
 
+	if err := converter.validateOutput(operationContext, stagedPath); err != nil {
+		return err
+	}
+
+	if err := operationContext.Err(); err != nil {
+		return err
+	}
+
+	return os.Link(stagedPath, resultPath)
+}
+
+func (converter *converterImpl) validateOutput(operationContext context.Context, stagedPath string) error {
 	info, err := os.Stat(stagedPath)
 	if err != nil {
 		return fmt.Errorf(ffmpegDidNotProduceOutputFormat, err)
@@ -219,11 +189,7 @@ func (converter *converterImpl) Convert(
 		return errors.New(invalidMP4OutputMessage)
 	}
 
-	if err := operationContext.Err(); err != nil {
-		return err
-	}
-
-	return os.Link(stagedPath, resultPath)
+	return nil
 }
 
 func (converter *converterImpl) convert(operationContext context.Context, logger progress.Logger, arguments []string) error {
@@ -246,4 +212,90 @@ func containsMP4Format(formats string) bool {
 	}
 
 	return false
+}
+
+func validateConversionInputs(segments []string, resultName string) (string, error) {
+	if len(segments) == 0 {
+		return "", errors.New(cannotConvertAnEmptySegmentListMessage)
+	}
+
+	resultPath, err := filepath.Abs(resultName)
+	if err != nil {
+		return "", err
+	}
+
+	if _, err := os.Lstat(resultPath); err == nil {
+		return "", errors.New(conversionDestinationAlreadyExistsMessage)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+
+	for _, segment := range segments {
+		info, err := os.Stat(segment)
+		if err != nil {
+			return "", err
+		}
+
+		if !info.Mode().IsRegular() || info.Size() == 0 {
+			return "", errors.New(missingOrEmptySegmentMessage)
+		}
+	}
+
+	return resultPath, nil
+}
+
+func createConcatManifest(segments []string) (manifestPath string, resultError error) {
+	manifest, err := os.CreateTemp(filepath.Dir(segments[0]), manifestPattern)
+	if err != nil {
+		return "", err
+	}
+
+	defer func() {
+		_ = manifest.Close()
+		if resultError != nil {
+			resultError = errors.Join(resultError, os.Remove(manifest.Name()))
+		}
+	}()
+
+	if err := writeConcatManifest(manifest, segments); err != nil {
+		return "", err
+	}
+
+	return manifest.Name(), nil
+}
+
+func writeConcatManifest(manifest *os.File, segments []string) error {
+	for _, segment := range segments {
+		absolute, err := filepath.Abs(segment)
+		if err != nil {
+			return err
+		}
+
+		if strings.ContainsAny(absolute, lineBreaks) {
+			return errors.New(segmentPathContainsANewlineMessage)
+		}
+
+		escaped := strings.ReplaceAll(absolute, concatQuote, escapedConcatQuote)
+		if _, err := fmt.Fprintf(manifest, manifestEntryFormat, escaped); err != nil {
+			return err
+		}
+	}
+
+	if err := manifest.Close(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func conversionArguments(manifestPath string, stagedPath string) []string {
+	return []string{
+		noStdinFlag, noOverwriteFlag,
+		inputFormatFlag, concatFormat,
+		concatSafetyFlag, allowAbsolutePaths,
+		inputFlag, manifestPath,
+		codecFlag, copyCodec,
+		audioFilterFlag, aacBitstreamFilter,
+		stagedPath,
+	}
 }
