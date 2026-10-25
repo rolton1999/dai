@@ -79,7 +79,8 @@ concurrent publication, playlist worker limits and slot reuse, cancellation
 cleanup, independent progress rows, and playlist recovery after interruption.
 Both HLS parsers have fuzz targets.
 Recovery tests cover output checksums, stable filenames, invalid manifests,
-checkpoint failures, and lock release after process termination.
+generated filenames truncated at dots, spaces, and UTF-8 boundaries, checkpoint
+failures, and lock release after process termination.
 Integration tests cover redirects, segment downloads, conversion, MP4 validation,
 unusual filenames, and failure reporting. CI runs lint and unit tests; integration
 tests run locally on demand.

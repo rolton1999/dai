@@ -259,7 +259,7 @@ func (recovery *playlistRecovery) load() (resultError error) {
 	}
 
 	for videoID, video := range manifest.Videos {
-		if videoID == "" || video.Filename != safeFilename(strings.TrimSuffix(video.Filename, outputExtension)) {
+		if videoID == "" || !validResumeFilename(video.Filename) {
 			return errors.New(resumeInvalidManifest)
 		}
 
@@ -284,6 +284,19 @@ func (recovery *playlistRecovery) load() (resultError error) {
 	recovery.manifest = manifest
 
 	return nil
+}
+
+func validResumeFilename(filename string) bool {
+	stem, hasExtension := strings.CutSuffix(filename, outputExtension)
+	if !hasExtension || len(stem) > outputNameLimit {
+		return false
+	}
+
+	// Truncation can expose a trailing dot or space in an otherwise safe name.
+	// Accept those recorded names without renaming existing downloaded files.
+	trimmedStem := strings.TrimRight(stem, trimmedFilenameCharacters)
+
+	return safeFilename(stem) == trimmedStem+outputExtension
 }
 
 func (recovery *playlistRecovery) save() (resultError error) {

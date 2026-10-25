@@ -102,6 +102,59 @@ func readResumeManifest(test *testing.T, directory string) resumeManifest {
 	return manifest
 }
 
+func TestResumeManifestReloadsGeneratedFilenames(test *testing.T) {
+	const (
+		titleCharacter      = "a"
+		titleSuffix         = "suffix"
+		dotBoundary         = "."
+		spaceBoundary       = " "
+		unicodeBoundary     = "界"
+		unicodePrefixLength = 197
+		filenameMismatch    = "recorded filename changed: got %q, want %q"
+	)
+
+	for _, boundary := range []string{dotBoundary, spaceBoundary, unicodeBoundary} {
+		test.Run(boundary, func(test *testing.T) {
+			directory := test.TempDir()
+
+			title := strings.Repeat(titleCharacter, outputNameLimit-1) + boundary + titleSuffix
+			if boundary == unicodeBoundary {
+				title = strings.Repeat(titleCharacter, unicodePrefixLength) + boundary + titleSuffix
+			}
+
+			filename := safeFilename(title)
+
+			recovery, err := newPlaylistRecovery(directory, parallelPlaylistID)
+			if err != nil {
+				test.Fatal(err)
+			}
+
+			addError := recovery.add(testID, filename)
+			saveError := recovery.save()
+
+			closeError := recovery.Close()
+			if err := errors.Join(addError, saveError, closeError); err != nil {
+				test.Fatal(err)
+			}
+
+			reloaded, err := newPlaylistRecovery(directory, parallelPlaylistID)
+			if err != nil {
+				test.Fatal(err)
+			}
+
+			defer func() {
+				if err := reloaded.Close(); err != nil {
+					test.Error(err)
+				}
+			}()
+
+			if actual := reloaded.filename(testID); actual != filename {
+				test.Fatalf(filenameMismatch, actual, filename)
+			}
+		})
+	}
+}
+
 func TestPlaylistResumeRestartsOnlyUnfinishedVideos(test *testing.T) {
 	operationContext, cancel := context.WithTimeout(test.Context(), parallelDeadline)
 	defer cancel()
