@@ -5,6 +5,7 @@ import (
 	"dai/internal/http/client"
 	"dai/internal/pipeline"
 	"dai/internal/progress"
+	"errors"
 	"fmt"
 	"os"
 )
@@ -14,10 +15,18 @@ const (
 	mediaPlaylistErrorFormat      = "cannot parse media playlist: %w"
 	loadingProgressFormat         = " ~ loading %d%%"
 	progressPercent               = 100
+	segmentDirectoryPattern       = "dai-segments-*"
+	segmentFilePrefix             = "segment"
 )
 
-func DownloadTSFiles(logger progress.Logger, expectedName string, playlist VariantPlaylist) ([]string, error) {
-	directoryName, err := os.MkdirTemp("", "")
+// The caller owns a successful artifact and must close it after conversion.
+type Artifact interface {
+	Files() []string
+	Close() error
+}
+
+func DownloadTSFiles(operationContext context.Context, logger progress.Logger, playlist VariantPlaylist) (result Artifact, resultError error) {
+	directoryName, err := os.MkdirTemp("", segmentDirectoryPattern)
 	if err != nil {
 		return nil, fmt.Errorf(temporaryDirectoryErrorFormat, err)
 	}
@@ -25,11 +34,11 @@ func DownloadTSFiles(logger progress.Logger, expectedName string, playlist Varia
 	downloadSucceeded := false
 	defer func() {
 		if !downloadSucceeded {
-			_ = os.RemoveAll(directoryName)
+			resultError = errors.Join(resultError, os.RemoveAll(directoryName))
 		}
 	}()
 
-	segmentMetas, err := collectSegmentMetas(playlist, directoryName, expectedName)
+	segmentMetas, err := collectSegmentMetas(operationContext, playlist, directoryName, segmentFilePrefix)
 	if err != nil {
 		return nil, fmt.Errorf(mediaPlaylistErrorFormat, err)
 	}
@@ -47,13 +56,26 @@ func DownloadTSFiles(logger progress.Logger, expectedName string, playlist Varia
 	downloadPipeline.AppendMedium(loadStage)
 	downloadPipeline.AppendFinalizer(consumeStage)
 
-	if err := downloadPipeline.Run(context.Background()); err != nil {
+	if err := downloadPipeline.Run(operationContext); err != nil {
 		return nil, err
 	}
 
 	downloadSucceeded = true
 
-	return listOfFiles, nil
+	return &artifact{directory: directoryName, files: listOfFiles}, nil
+}
+
+type artifact struct {
+	directory string
+	files     []string
+}
+
+func (download *artifact) Files() []string {
+	return append([]string(nil), download.files...)
+}
+
+func (download *artifact) Close() error {
+	return os.RemoveAll(download.directory)
 }
 
 type segmentMeta struct {
@@ -93,9 +115,8 @@ func newConsumeStage(logger progress.Logger, segmentCount int) (pipeline.Finaliz
 
 	return pipeline.NewFinalizeStage(func(_ context.Context, meta segmentMeta) error {
 		listOfFiles[meta.index] = meta.fileName
+		completedSegmentCount++
 		logger.UpdateWithSuffix(fmt.Sprintf(loadingProgressFormat, progressPercent*completedSegmentCount/len(listOfFiles)))
-
-		completedSegmentCount += 1
 
 		return nil
 	}), listOfFiles

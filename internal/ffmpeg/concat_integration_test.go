@@ -31,6 +31,7 @@ const (
 	fixtureProbeError        = "invalid output: %v\n%s"
 	fixtureDiagnosticsError  = "expected FFmpeg diagnostics identifying the bad input, got %v"
 	fixtureFalseSuccessError = "failed conversion reported success"
+	fixtureInputRemovedError = "converter removed caller-owned input: %v"
 )
 
 type fixtureLogger struct {
@@ -72,6 +73,10 @@ func TestConcatAcceptsColonAndOptionLikeOutputNames(test *testing.T) {
 				test.Fatal(err)
 			}
 
+			if _, err := os.Stat(segment); err != nil {
+				test.Fatalf(fixtureInputRemovedError, err)
+			}
+
 			probeArguments := append(strings.Fields(fixtureProbeArguments), filepath.Join(workspace, name))
 
 			probe := exec.CommandContext(operationContext, fixtureFFprobe, probeArguments...)
@@ -96,6 +101,10 @@ func TestConcatIncludesDiagnosticsAndDoesNotReportSuccessOnFailure(test *testing
 	err := ffmpeg.ConcatTSToResult(logger, []string{segment}, fixturePlainOutput)
 	if err == nil || !strings.Contains(err.Error(), fixtureSegmentName) {
 		test.Fatalf(fixtureDiagnosticsError, err)
+	}
+
+	if _, err := os.Stat(segment); err != nil {
+		test.Fatalf(fixtureInputRemovedError, err)
 	}
 
 	for _, suffix := range logger.suffixes {
