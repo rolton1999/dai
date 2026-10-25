@@ -35,7 +35,7 @@ segments and conversion have bounded deadlines; Ctrl-C cancels active work.
 ```sh
 make lint
 make test
-go test -tags=integration -race ./...
+make test-integration
 ```
 
 The integration tests generate local media and use FFmpeg/FFprobe without
@@ -43,3 +43,13 @@ accessing Rutube. Ordinary tests use process doubles and need neither executable
 Live checksum tests are opt-in: `make e2e-single` and `make e2e-playlist` use
 temporary directories. See [tests/e2e/README.md](tests/e2e/README.md) for reference
 checksums and [bugs.md](bugs.md) for verification coverage.
+
+`make lint` also checks integration-tagged sources and applies fixes. CI rejects
+tracked source changes produced by lint. `make clean` removes only `bin/dai`.
+The legacy `make test-small` and `make test-big` targets alias `e2e-single` and
+`e2e-playlist`, respectively, and use the same isolated checksum workflow.
+
+Metadata and HLS playlist requests make at most five attempts for transient
+failures, with 1/2/3/4-second backoff and a five-minute operation deadline.
+Permanent failures stop immediately. Segment transfers retain four attempts,
+250/500/1000-millisecond backoff, and a two-minute operation deadline.

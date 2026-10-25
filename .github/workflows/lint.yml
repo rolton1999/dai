@@ -19,6 +19,8 @@ jobs:
       - name: Go toolchain version
         run: go version
       - run: make lint
+      - name: Reject automatic lint changes
+        run: git diff --exit-code
 
   test:
     runs-on: ubuntu-24.04
@@ -31,3 +33,15 @@ jobs:
       - name: Go toolchain version
         run: go version
       - run: make test
+
+  integration:
+    runs-on: ubuntu-24.04
+    container: golang:1.27.1
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Install FFmpeg for local integration fixtures
+        run: apt-get update && apt-get install -y --no-install-recommends ffmpeg
+      - run: make test-integration

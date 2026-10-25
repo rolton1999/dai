@@ -1,7 +1,11 @@
-# Bug fix plan
+# Bug fixes and verification
 
-This plan covers the remaining bugs identified in the project review. Complete
-the stages in order, keeping `make lint` and `make test` passing after each stage.
+All six stages from the original review are implemented. Sections 1–5 were merged
+through PR #10; section 6 and the remaining retry-budget extraction are completed
+on `codex/fix-developer-checks`, based on merged `master` at `16014b2`.
+Historical implementation notes below retain the budgets and verification results
+of each extraction. The current policy and final validation are recorded in section 6.
+Live Rutube verification of this assembled branch has not been rerun.
 
 ## 1. Parse and validate input URLs
 
@@ -348,15 +352,15 @@ race-enabled suite, local FFmpeg/HTTP integration tests, and 100 race-enabled
 repetitions of download/conversion/progress tests pass. A second lint run produces
 no source changes. Live Rutube checksum tests were not run for this extraction;
 source-branch live results do not establish compatibility of the assembled branch.
-Section 6 and the original branch's larger retry budget remain separate work.
+Section 6 and the original branch's larger retry budget are completed below.
 
 ## 6. Make developer checks safe and repeatable
 
-- [ ] Restrict `make clean` to known generated artifacts instead of deleting every
+- [x] Restrict `make clean` to known generated artifacts instead of deleting every
   root-level MP4 and JSON file.
-- [ ] Run download smoke tests in isolated output directories.
-- [ ] Preserve mutating `make lint`; make CI detect unexpected changes after it runs.
-- [ ] Keep live Rutube smoke tests opt-in.
+- [x] Run download smoke tests in isolated output directories.
+- [x] Preserve mutating `make lint`; make CI detect unexpected changes after it runs.
+- [x] Keep live Rutube smoke tests opt-in.
 
 Tests:
 
@@ -365,23 +369,64 @@ Tests:
 - Run the complete local integration flow without accessing Rutube.
 - Verify CI fails when lint applies changes that were not committed.
 
+Completed on `codex/fix-developer-checks` after the section 5 merge. `make clean`
+removes only `bin/dai`. `test-small` and `test-big` now alias the isolated
+single-video and playlist checksum workflows; neither runs the old destructive
+cleanup. Live tests remain opt-in, outside ordinary tests and CI.
+
+`make lint` checks integration-tagged files and retains automatic fixes. CI runs
+`git diff --exit-code` immediately afterward to reject uncommitted tracked changes.
+`make test-integration` runs the race-enabled local integration suite with a
+60-second test deadline. A separate CI job installs FFmpeg and runs that target;
+no test in the job accesses Rutube. README and repository instructions reflect
+the new commands. The remaining legacy logger/model display names were made
+descriptive, and display literals received owner-local constants without changing
+terminal output.
+
+Isolated Makefile fixtures verified that unrelated MP4, JSON and binary files
+survive `clean`; both smoke aliases use private output/segment directories; and
+success and failure remove owned workspaces while preserving user files and
+propagating failure. The actual CI guard was executed in a temporary Git repository:
+it passed before a fixture linter ran and returned nonzero after that linter
+changed a tracked file. These checks used local doubles, not Rutube downloads.
+
+The final unported retry-budget change from `codex/fix-all-known-bugs` is also
+extracted. Metadata and master/media playlists now make at most five attempts,
+with 1/2/3/4-second backoff and five-minute operation deadlines. Existing request
+limits, permanent-error classification, client ownership and caller cancellation
+remain intact. Segment transfers retain four attempts and their original deadlines
+and exponential backoff. Virtual-time tests verify all five attempts, ten seconds
+of total backoff, recovery on the last attempt, permanent-error handling and
+cancellation. Provider/HLS policy tests exercise the new budget through their
+actual call paths.
+
+Final verification: `make build`, pinned `make lint`, `make test`, and
+`make test-integration` pass. A second lint run leaves source files unchanged.
+Master/media parser fuzz runs completed over 232,000/297,000 inputs without a
+crash. One hundred race-enabled repetitions of retry, Rutube, HLS, pipeline,
+download, conversion and progress tests pass. The local integration generates
+its own media, follows master/media redirects, validates the MP4 with FFprobe,
+and checks cleanup. Concurrency/failure suites cover worker shutdown, progress,
+input ownership, isolated manifests, original-output preservation and competing
+publication. No current-branch live checksum result is claimed.
+
 ## Final acceptance criteria
 
-- [ ] `make lint` reports zero issues; a second run produces no changes.
-- [ ] `make test` passes with race detection.
-- [ ] Parser fuzz runs complete without crashes.
-- [ ] A local HTTP → download → FFmpeg integration produces a valid MP4.
-- [ ] Failure tests leave no partial output, temporary data, or active workers.
-- [ ] Concurrent downloads preserve their own manifests, segments, and outputs.
+- [x] `make lint` reports zero issues; a second run produces no changes.
+- [x] `make test` passes with race detection.
+- [x] Parser fuzz runs complete without crashes.
+- [x] A local HTTP → download → FFmpeg integration produces a valid MP4.
+- [x] Failure tests leave no partial output, temporary data, or active workers.
+- [x] Concurrent downloads preserve their own manifests, segments, and outputs.
 
-Start with URL and HLS parsing: these bugs prevent valid downloads and the parser
-fixtures provide the foundation for reliable end-to-end tests.
+All final acceptance scenarios are covered by local deterministic, fuzz and
+integration checks. Live-service/CDN availability remains a separate opt-in check.
 
 ## Rules-based review after package reorganization
 
 The repository now uses the conventions in `AGENTS.md`, adapted from Sugarwatch.
-The reorganization changes package boundaries and removes unused infrastructure;
-it does not complete the behavioral fixes above.
+The reorganization established package boundaries; the six completed stages above
+provide the behavioral fixes and their verification.
 
 Completed structure changes:
 
@@ -397,35 +442,33 @@ Completed structure changes:
   implementation in its own file.
 - [x] Remove the unused worker-pool implementation and unused stage field.
 
-Original findings from source inspection (completion is tracked in the stage
-checklists above):
+Original review findings are resolved by the completed stages:
 
-| Priority | Rule and finding | Location | Required verification |
-| --- | --- | --- | --- |
-| P1 | Goroutine ownership and bounded waits: the spinner outlives failed conversion; HTTP and FFmpeg operations lack cancellation and deadlines. Pipeline stop signals cannot interrupt callbacks or blocked HTTP reads. | `internal/progress/spinner.go`, `internal/ffmpeg/concat.go`, `internal/hls/download.go`, `internal/pipeline` | Stall HTTP reads and process execution, cancel with a deadline, and verify workers and progress reporting stop before the operation returns. |
-| P1 | Output ownership: titles control output paths, concat manifests are shared across operations, and temporary-directory ownership is now completed in section 4. Output naming and shared concat manifests remain section 5 work. | `internal/download/download.go`, `internal/ffmpeg/concat.go`, `internal/hls/download.go` | Isolate concurrent downloads; exercise invalid titles, existing destinations, partial downloads, and conversion failures; verify unrelated files survive. |
-| P1 | Explicit failure contracts: pipeline callbacks discard errors; malformed HLS can panic; metadata HTTP failures can be accepted as success. | `internal/pipeline/produce_stage.go`, `internal/pipeline/process_stage.go`, `internal/hls`, `internal/rutube` | Public operation tests must observe the original failure and must not start conversion or report success. Add parser fuzz tests. |
-| P2 | Small behavior interfaces: provider requests and FFmpeg execution are package-level calls bound to default clients and executables, making isolated orchestration tests difficult. | `internal/rutube`, `internal/ffmpeg`, `internal/download` | Introduce minimal owner-defined interfaces and constructors that validate and allocate without starting I/O; test orchestration through injected HTTP and conversion behavior. |
-| P2 | Bounded input: response bodies are read with unbounded `io.ReadAll`, and pagination has no repeated-page detection or operation deadline. An oversized response can exhaust memory; repeated `next` values can loop indefinitely. | `internal/hls/playlist.go`, `internal/hls/media_playlist.go`, `internal/rutube/playlist_info.go`, `internal/rutube/video_info.go` | Add explicit metadata/playlist size limits and pagination safeguards; test oversized bodies and cyclic pagination with bounded completion. |
-| P2 | Descriptive naming: legacy code still uses names such as `r`, `s`, `l`, `d`, `eBody`, and shadowing of the `bytes` package. Moving a file has not normalized its implementation. | `internal/hls`, `internal/progress/logger.go`, `internal/rutube`, `internal/ffmpeg/concat.go` | Rename identifiers when rewriting the affected implementation; run lint and tests without behavior changes. |
-| P2 | Named constants: playlist line offsets, progress percentages, FFmpeg arguments, and display messages remain embedded in functions or have generic names. | `internal/hls`, `internal/ffmpeg/concat.go`, `internal/progress` | Replace positional parsing rather than naming incorrect offsets; give remaining domain values descriptive owner-local constants and verify behavior. |
-| P2 | Safe repository checks: smoke tests still delete unrelated root files, and CI does not check whether mutating lint changed tracked files. | `Makefile`, `.github/workflows/lint.yml` | Test cleanup against unrelated fixture files and verify CI rejects uncommitted automatic fixes. |
+| Finding | Resolution |
+| --- | --- |
+| Goroutine ownership, cancellation and bounded waits | Explicit contexts, joined pipeline workers/spinner, bounded HTTP and process execution; sections 3–5. |
+| Output and temporary-data ownership | Owned HLS artifacts, isolated manifests, safe staging/publication and cleanup; sections 4–5. |
+| Explicit failure contracts | Validated metadata/HLS and first-error pipeline propagation; sections 1–4. |
+| Small behavior interfaces | Injected metadata, HLS, conversion and process behavior with private implementations; sections 3–5. |
+| Bounded input and pagination | Per-response and total byte limits, page/cycle guards and deadlines; section 3. |
+| Descriptive names and constants | Parser/conversion rewrites and final legacy logger/model display cleanup; sections 2, 5–6. |
+| Safe developer checks | Isolated smoke targets, scoped clean and CI lint-change detection; section 6. |
 
 Additional review constraints:
 
-- [ ] Pass `context.Context` explicitly as the first argument of operations that
+- [x] Pass `context.Context` explicitly as the first argument of operations that
   need cancellation; never store it in structs or closure fields.
-- [ ] Preserve minimal interfaces and return unexported implementations through
+- [x] Preserve minimal interfaces and return unexported implementations through
   interfaces from exported constructors. Keep construction separate from startup.
-- [ ] Remove comments that repeat code when rewriting the surrounding code; use
+- [x] Remove comments that repeat code when rewriting the surrounding code; use
   comments only to explain constraints, invariants, or upstream quirks.
-- [ ] Keep signatures with four or more parameters on multiple lines.
-- [ ] Add deterministic public-behavior tests for HLS, orchestration, conversion,
+- [x] Keep signatures with four or more parameters on multiple lines.
+- [x] Add deterministic public-behavior tests for HLS, orchestration, conversion,
   and failure cleanup; existing parser unit tests alone do not validate downloads.
 
-Validation of the reorganization must include build, lint, race tests, and repeated
-pipeline tests that verify every item reaches the finalizer exactly once. Live
-Rutube compatibility remains unverified unless the opt-in smoke tests are run.
+Build, lint, race tests and repeated pipeline/concurrency checks pass. Local HTTP
+and FFmpeg integration verifies the assembled flow. Historical live-service
+results below do not substitute for rerunning the opt-in smoke tests.
 
 ## Fixed regression: phantom final segment
 

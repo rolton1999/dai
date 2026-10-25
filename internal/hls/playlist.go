@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const playlistRequestTimeout = 2 * time.Minute
+const playlistRequestTimeout = 5 * time.Minute
 
 const (
 	masterRequestErrorFormat = "cannot read master playlist: %w"

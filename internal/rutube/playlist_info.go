@@ -33,9 +33,9 @@ type PlaylistInfo struct {
 	VideoIDs []string
 }
 
-func (pi PlaylistInfo) String() string {
-	const template = "{\n\ttitle: %s,\n\tvideoIDs: %v\n}"
-	return fmt.Sprintf(template, pi.Title, pi.VideoIDs)
+func (playlistInfo PlaylistInfo) String() string {
+	const playlistInfoDisplayFormat = "{\n\ttitle: %s,\n\tvideoIDs: %v\n}"
+	return fmt.Sprintf(playlistInfoDisplayFormat, playlistInfo.Title, playlistInfo.VideoIDs)
 }
 
 func GetPlaylistInfo(playlistID string) (PlaylistInfo, error) {

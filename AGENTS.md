@@ -159,8 +159,8 @@ may remain together.
 ## Checks and tests
 
 - Run `make build`, `make lint`, and `make test` before pushing.
-- `make lint` applies automatic fixes. Inspect those changes and rerun checks when
-  they affect behavior. Keep `containedctx` enabled.
+- `make lint` includes integration-tagged files and applies automatic fixes.
+  Inspect those changes and rerun checks when they affect behavior. Keep `containedctx` enabled.
 - `make test` runs Go tests with race detection. Prefer observable behavior over
   implementation details. Keep tests independent of live Rutube and an installed
   FFmpeg unless they are explicitly designated integration or smoke tests.
@@ -174,7 +174,7 @@ may remain together.
   use retries, skips, or repeat counts to excuse intermittent failures.
 - `make test-small` and `make test-big` access live Rutube and require FFmpeg.
   They are opt-in smoke tests, not substitutes for deterministic automated tests.
-  Their current cleanup behavior is a known defect tracked in `bugs.md`.
+  They alias the isolated single-video and playlist checksum tests.
 
 ```sh
 make build

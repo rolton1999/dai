@@ -7,7 +7,7 @@ import (
 
 func Do(operationContext context.Context, operation func(context.Context) error) error {
 	const (
-		retries        = 3
+		retries        = 5
 		backoffTimeout = time.Second
 	)
 

@@ -2,6 +2,12 @@ package progress
 
 import "fmt"
 
+const (
+	loggerLineFormat   = "%s%s"
+	loggerPadding      = " "
+	loggerUpdateFormat = "\r%s"
+)
+
 type Logger interface {
 	NewPrefix(prefix string)
 	UpdateWithSuffix(suffix string)
@@ -13,26 +19,26 @@ func NewLogger() Logger {
 }
 
 type loggerImpl struct {
-	longestLineLen int
-	prefix         string
+	longestLineLength int
+	prefix            string
 }
 
-func (l *loggerImpl) NewPrefix(prefix string) {
-	l.prefix = prefix
-	l.longestLineLen = 0
+func (logger *loggerImpl) NewPrefix(prefix string) {
+	logger.prefix = prefix
+	logger.longestLineLength = 0
 }
 
-func (l *loggerImpl) UpdateWithSuffix(suffix string) {
-	s := fmt.Sprintf("%s%s", l.prefix, suffix)
+func (logger *loggerImpl) UpdateWithSuffix(suffix string) {
+	line := fmt.Sprintf(loggerLineFormat, logger.prefix, suffix)
 
-	l.longestLineLen = max(l.longestLineLen, len(s))
-	for len(s) < l.longestLineLen {
-		s += " "
+	logger.longestLineLength = max(logger.longestLineLength, len(line))
+	for len(line) < logger.longestLineLength {
+		line += loggerPadding
 	}
 
-	fmt.Printf("\r%s", s)
+	fmt.Printf(loggerUpdateFormat, line)
 }
 
-func (l *loggerImpl) PrintNewLine() {
+func (logger *loggerImpl) PrintNewLine() {
 	fmt.Println()
 }
